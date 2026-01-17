@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+
 import UploadCard from "@/app/components/UploadCard";
 import InterviewHeader from "@/app/components/InterviewHeader";
 import TimerBadge from "@/app/components/TimerBadge";
@@ -13,49 +14,88 @@ type Evaluation = {
   reasoning: string;
 };
 
-const QUESTION_TIME = 160;
-const TOTAL_QUESTIONS = 3;
-
 export default function InterviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [resumeText, setResumeText] = useState("");
   const [question, setQuestion] = useState("");
+
+  // 🎤 AUDIO
+  const [listening, setListening] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [answerText, setAnswerText] = useState("");
 
-  const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
+  const recognitionRef = useRef<any>(null);
+
+  // 🧠 INTERVIEW STATE
+  const [interviewState, setInterviewState] = useState({
+    projects: [] as any[],
+    currentProjectIndex: 0,
+    questionCountForProject: 0,
+    maxQuestionsForProject: 3,
+    interviewCompleted: false,
+  });
+
+  // ⏱ TIMER — 160 seconds
+  const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const recognitionRef = useRef<any>(null);
-  const [isRecording, setIsRecording] = useState(false);
-
+  // 📊 EVALUATIONS
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-  const [finalReport, setFinalReport] = useState<any | null>(null);
 
-  const interviewCompleted = evaluations.length >= TOTAL_QUESTIONS;
+  // 🧾 FINAL REPORT
+  const [finalReport, setFinalReport] = useState<any>(null);
 
-  /* ===================== UPLOAD ===================== */
+  /* ================= UPLOAD ================= */
   async function uploadResume() {
     if (!file) return;
+
     setLoading(true);
-    setEvaluations([]);
-    setFinalReport(null);
+    setResumeText("");
     setQuestion("");
     setAnswerText("");
+    setEvaluations([]);
+    setFinalReport(null);
+
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = new URL(
+      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+    let text = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map((i: any) => i.str).join(" ") + "\n";
+    }
 
     const res = await fetch("/api/upload-resume", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: file.name, text: "resume" }),
+      body: JSON.stringify({ filename: file.name, text }),
     });
 
     const data = await res.json();
-    setResumeText(data?.extractedText || "");
+    setResumeText(data.extractedText || "");
+
+    setInterviewState({
+      projects: [{ name: "Primary Project" }],
+      currentProjectIndex: 0,
+      questionCountForProject: 0,
+      maxQuestionsForProject: 3,
+      interviewCompleted: false,
+    });
+
     setLoading(false);
   }
 
-  /* ===================== START INTERVIEW ===================== */
+  /* ================= START INTERVIEW ================= */
   async function startInterview() {
     const res = await fetch("/api/ask-question", {
       method: "POST",
@@ -64,32 +104,43 @@ export default function InterviewPage() {
     });
 
     const data = await res.json();
-    setQuestion(data?.question || "");
+    setQuestion(data.question);
   }
 
-  /* ===================== TIMER ===================== */
+  /* ================= TIMER ================= */
   useEffect(() => {
     if (!question) return;
 
-    setTimeLeft(QUESTION_TIME);
+    setTimeLeft(160);
+
     if (timerRef.current) clearInterval(timerRef.current);
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          stopRecording();
           clearInterval(timerRef.current!);
-          submitAnswer();
+          timerRef.current = null;
+
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
+
+          if (answerText.trim()) {
+            submitAnswerAndGetFollowUp();
+          }
+
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    return () => clearInterval(timerRef.current!);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [question]);
 
-  /* ===================== AUDIO (FIXED) ===================== */
+  /* ================= AUDIO (ONE CLICK, CONTINUOUS) ================= */
   function startRecording() {
     if (isRecording) return;
 
@@ -103,38 +154,38 @@ export default function InterviewPage() {
     }
 
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+
     recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.continuous = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+      setListening(true);
+      setAnswerText("");
+    };
 
     recognition.onresult = (event: any) => {
-      setAnswerText((prev) =>
-        prev
-          ? prev + " " + event.results[0][0].transcript
-          : event.results[0][0].transcript
-      );
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript + " ";
+      }
+      setAnswerText(transcript.trim());
     };
 
     recognition.onend = () => {
-      if (timeLeft > 0 && isRecording) {
-        recognition.start(); // auto-restart
-      }
+      setIsRecording(false);
+      setListening(false);
     };
 
-    recognitionRef.current = recognition;
-    setIsRecording(true);
     recognition.start();
   }
 
-  function stopRecording() {
-    setIsRecording(false);
-    recognitionRef.current?.stop();
-  }
-
-  /* ===================== SUBMIT ANSWER ===================== */
-  async function submitAnswer() {
-    stopRecording();
-    if (!answerText) return;
+  /* ================= SUBMIT ================= */
+  async function submitAnswerAndGetFollowUp() {
+    if (recognitionRef.current) recognitionRef.current.stop();
+    if (timerRef.current) clearInterval(timerRef.current);
 
     const res = await fetch("/api/follow-up-question", {
       method: "POST",
@@ -144,54 +195,80 @@ export default function InterviewPage() {
 
     const data = await res.json();
 
-    if (data?.evaluation) {
-      setEvaluations((prev) => [...prev, data.evaluation]);
+    if (data.evaluation) {
+      setEvaluations((prev) => [
+        ...prev,
+        {
+          question,
+          answer: answerText,
+          score: data.evaluation.score,
+          reasoning: data.evaluation.reasoning,
+        },
+      ]);
     }
 
     setAnswerText("");
-    setQuestion(data?.nextQuestion || "");
-  }
+    setQuestion(data.nextQuestion || "");
 
-  /* ===================== FINAL REPORT ===================== */
-  async function generateFinalReport() {
-    const res = await fetch("/api/generate-report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeText, evaluations }),
+    setInterviewState((prev) => {
+      if (prev.questionCountForProject + 1 < prev.maxQuestionsForProject) {
+        return {
+          ...prev,
+          questionCountForProject: prev.questionCountForProject + 1,
+        };
+      }
+      return { ...prev, interviewCompleted: true };
     });
-
-    const data = await res.json();
-    setFinalReport(data || { verdict: "N/A" });
   }
 
-  /* ===================== UI ===================== */
+  /* ================= UI ================= */
   return (
-    <main style={{ padding: 40, maxWidth: 900, margin: "auto" }}>
+    <main style={{ maxWidth: 900, margin: "auto", padding: 32 }}>
       {!resumeText && (
-        <UploadCard loading={loading} onFileSelect={setFile} onUpload={uploadResume} />
+        <UploadCard
+          loading={loading}
+          onFileSelect={setFile}
+          onUpload={uploadResume}
+        />
       )}
 
-      {resumeText && !question && !interviewCompleted && (
+      {resumeText && !question && (
         <button onClick={startInterview}>Start Interview</button>
       )}
 
-      {question && !interviewCompleted && (
+      {question && !interviewState.interviewCompleted && (
         <>
-          <InterviewHeader current={evaluations.length + 1} total={TOTAL_QUESTIONS} />
-          <TimerBadge timeLeft={timeLeft} />
-          <h3>{question}</h3>
+          <InterviewHeader
+            current={evaluations.length + 1}
+            total={interviewState.maxQuestionsForProject}
+          />
 
-          <button onClick={startRecording} disabled={isRecording}>
-            {isRecording ? "Recording..." : "Start Answer"}
+          <TimerBadge timeLeft={timeLeft} />
+
+          <h3 style={{ marginTop: 20 }}>{question}</h3>
+
+          <button
+            onClick={startRecording}
+            disabled={isRecording || timeLeft === 0}
+          >
+            {isRecording ? "Recording..." : "Start Answering"}
           </button>
 
-          <p>{answerText}</p>
-          <button onClick={submitAnswer}>Submit Answer</button>
+          {answerText && (
+            <div style={{ marginTop: 16 }}>
+              <p>{answerText}</p>
+              <button onClick={submitAnswerAndGetFollowUp}>
+                Submit Answer
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {interviewCompleted && !finalReport && (
-        <button onClick={generateFinalReport}>Generate Final Report</button>
+      {interviewState.interviewCompleted && (
+        <div style={{ marginTop: 32 }}>
+          <h2>Interview Completed</h2>
+        </div>
       )}
 
       {finalReport && <ReportCard report={finalReport} />}
