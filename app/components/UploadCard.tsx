@@ -17,7 +17,7 @@ export default function UploadCard({ onFileSelect, onUpload, loading }: Props) {
     }}>
       <h3>Upload your Resume</h3>
       <p style={{ color: "#666" }}>
-        PDF only • Project-based Viva • 120s per question
+        PDF only • Project-based Viva • 160s per question
       </p>
 
       <input
