@@ -22,22 +22,16 @@ export default function InterviewPage() {
   const [question, setQuestion] = useState("");
 
   // 🎤 AUDIO
-  const [listening, setListening] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [answerText, setAnswerText] = useState("");
-
   const recognitionRef = useRef<any>(null);
 
   // 🧠 INTERVIEW STATE
   const [interviewState, setInterviewState] = useState({
-    projects: [] as any[],
-    currentProjectIndex: 0,
-    questionCountForProject: 0,
     maxQuestionsForProject: 3,
-    interviewCompleted: false,
   });
 
-  // ⏱ TIMER — 160 seconds
+  // ⏱ TIMER (160 sec)
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -47,7 +41,11 @@ export default function InterviewPage() {
   // 🧾 FINAL REPORT
   const [finalReport, setFinalReport] = useState<any>(null);
 
-  /* ================= UPLOAD ================= */
+  /* ================= DERIVED STATE (CRITICAL FIX) ================= */
+  const interviewCompleted =
+    evaluations.length === interviewState.maxQuestionsForProject;
+
+  /* ================= UPLOAD RESUME ================= */
   async function uploadResume() {
     if (!file) return;
 
@@ -84,14 +82,6 @@ export default function InterviewPage() {
     const data = await res.json();
     setResumeText(data.extractedText || "");
 
-    setInterviewState({
-      projects: [{ name: "Primary Project" }],
-      currentProjectIndex: 0,
-      questionCountForProject: 0,
-      maxQuestionsForProject: 3,
-      interviewCompleted: false,
-    });
-
     setLoading(false);
   }
 
@@ -112,7 +102,6 @@ export default function InterviewPage() {
     if (!question) return;
 
     setTimeLeft(160);
-
     if (timerRef.current) clearInterval(timerRef.current);
 
     timerRef.current = setInterval(() => {
@@ -140,7 +129,7 @@ export default function InterviewPage() {
     };
   }, [question]);
 
-  /* ================= AUDIO (ONE CLICK, CONTINUOUS) ================= */
+  /* ================= AUDIO (CONTINUOUS) ================= */
   function startRecording() {
     if (isRecording) return;
 
@@ -162,7 +151,6 @@ export default function InterviewPage() {
 
     recognition.onstart = () => {
       setIsRecording(true);
-      setListening(true);
       setAnswerText("");
     };
 
@@ -176,13 +164,12 @@ export default function InterviewPage() {
 
     recognition.onend = () => {
       setIsRecording(false);
-      setListening(false);
     };
 
     recognition.start();
   }
 
-  /* ================= SUBMIT ================= */
+  /* ================= SUBMIT ANSWER ================= */
   async function submitAnswerAndGetFollowUp() {
     if (recognitionRef.current) recognitionRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
@@ -209,16 +196,18 @@ export default function InterviewPage() {
 
     setAnswerText("");
     setQuestion(data.nextQuestion || "");
+  }
 
-    setInterviewState((prev) => {
-      if (prev.questionCountForProject + 1 < prev.maxQuestionsForProject) {
-        return {
-          ...prev,
-          questionCountForProject: prev.questionCountForProject + 1,
-        };
-      }
-      return { ...prev, interviewCompleted: true };
+  /* ================= FINAL REPORT ================= */
+  async function generateFinalReport() {
+    const res = await fetch("/api/generate-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resumeText, evaluations }),
     });
+
+    const data = await res.json();
+    setFinalReport(data);
   }
 
   /* ================= UI ================= */
@@ -236,7 +225,7 @@ export default function InterviewPage() {
         <button onClick={startInterview}>Start Interview</button>
       )}
 
-      {question && !interviewState.interviewCompleted && (
+      {question && !interviewCompleted && (
         <>
           <InterviewHeader
             current={evaluations.length + 1}
@@ -265,9 +254,24 @@ export default function InterviewPage() {
         </>
       )}
 
-      {interviewState.interviewCompleted && (
-        <div style={{ marginTop: 32 }}>
-          <h2>Interview Completed</h2>
+      {interviewCompleted && !finalReport && (
+        <div style={{ marginTop: 32, textAlign: "center" }}>
+          <h2>Your interview has been completed</h2>
+          <p style={{ marginTop: 8, color: "#555" }}>
+            Click below to generate your interview feedback report.
+          </p>
+
+          <button
+            onClick={generateFinalReport}
+            style={{
+              marginTop: 16,
+              padding: "10px 20px",
+              fontSize: 16,
+              cursor: "pointer",
+            }}
+          >
+            Generate Final Report
+          </button>
         </div>
       )}
 
