@@ -9,24 +9,35 @@ export async function POST(req: Request) {
   try {
     const { resumeText, evaluations } = await req.json();
 
+    if (!evaluations || evaluations.length === 0) {
+      return NextResponse.json(
+        { error: "No evaluations found" },
+        { status: 400 }
+      );
+    }
+
+    const evaluationText = evaluations
+      .map(
+        (e: any, i: number) =>
+          `Q${i + 1}: ${e.question}\nAnswer: ${e.answer}\nScore: ${e.score}\nReason: ${e.reasoning}`
+      )
+      .join("\n\n");
+
     const prompt = `
-You are a hiring manager.
+You are an interview evaluator.
 
-Based on the interview evaluations below, generate a final interview report.
+Based on the candidate resume and interview evaluations, generate a final report.
 
-EVALUATIONS:
-${JSON.stringify(evaluations, null, 2)}
+Resume:
+${resumeText}
 
-TASK:
-1. Give final verdict: Hire / Borderline / No-Hire
-2. Give a concise summary (3–4 lines)
-3. Provide project-wise strengths & gaps
+Interview Evaluations:
+${evaluationText}
 
-Respond ONLY in valid JSON:
-
+Return JSON only with this structure:
 {
-  "verdict": "Hire | Borderline | No-Hire",
-  "summary": "text",
+  "verdict": "Strong | Medium | Weak",
+  "summary": "2-3 line overall feedback",
   "projectBreakdown": {
     "strengths": ["..."],
     "gaps": ["..."]
@@ -36,17 +47,16 @@ Respond ONLY in valid JSON:
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are a hiring manager." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.2,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
     });
 
-    const raw = completion.choices[0].message.content || "{}";
-    return NextResponse.json(JSON.parse(raw));
-  } catch (error) {
-    console.error("REPORT ERROR:", error);
+    const text = completion.choices[0].message.content || "{}";
+    const json = JSON.parse(text);
+
+    return NextResponse.json(json);
+  } catch (err: any) {
+    console.error("REPORT ERROR:", err);
     return NextResponse.json(
       { error: "Failed to generate report" },
       { status: 500 }
