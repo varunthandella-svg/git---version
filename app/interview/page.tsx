@@ -26,24 +26,21 @@ export default function InterviewPage() {
   const [answerText, setAnswerText] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // 🧠 INTERVIEW STATE
-  const [interviewState, setInterviewState] = useState({
-    maxQuestionsForProject: 3,
-  });
+  // 🧠 INTERVIEW CONFIG
+  const maxQuestionsForProject = 3;
 
   // ⏱ TIMER (160 sec)
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 📊 EVALUATIONS
+  // 📊 ANSWERS
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
 
   // 🧾 FINAL REPORT
   const [finalReport, setFinalReport] = useState<any>(null);
 
-  /* ================= DERIVED STATE (CRITICAL FIX) ================= */
-  const interviewCompleted =
-    evaluations.length === interviewState.maxQuestionsForProject;
+  /* ================= DERIVED STATE ================= */
+  const interviewCompleted = evaluations.length === maxQuestionsForProject;
 
   /* ================= UPLOAD RESUME ================= */
   async function uploadResume() {
@@ -81,7 +78,6 @@ export default function InterviewPage() {
 
     const data = await res.json();
     setResumeText(data.extractedText || "");
-
     setLoading(false);
   }
 
@@ -110,13 +106,8 @@ export default function InterviewPage() {
           clearInterval(timerRef.current!);
           timerRef.current = null;
 
-          if (recognitionRef.current) {
-            recognitionRef.current.stop();
-          }
-
-          if (answerText.trim()) {
-            submitAnswerAndGetFollowUp();
-          }
+          if (recognitionRef.current) recognitionRef.current.stop();
+          if (answerText.trim()) submitAnswerAndGetFollowUp();
 
           return 0;
         }
@@ -198,7 +189,7 @@ export default function InterviewPage() {
     setQuestion(data.nextQuestion || "");
   }
 
-  /* ================= FINAL REPORT ================= */
+  /* ================= GENERATE REPORT ================= */
   async function generateFinalReport() {
     const res = await fetch("/api/generate-report", {
       method: "POST",
@@ -207,7 +198,16 @@ export default function InterviewPage() {
     });
 
     const data = await res.json();
-    setFinalReport(data);
+
+    // 🔐 NORMALIZE RESPONSE (CRASH-PROOF)
+    setFinalReport({
+      verdict: data.verdict || "Medium",
+      summary: data.summary || "Interview completed.",
+      projectBreakdown: {
+        strengths: data.projectBreakdown?.strengths || [],
+        gaps: data.projectBreakdown?.gaps || [],
+      },
+    });
   }
 
   /* ================= UI ================= */
@@ -229,7 +229,7 @@ export default function InterviewPage() {
         <>
           <InterviewHeader
             current={evaluations.length + 1}
-            total={interviewState.maxQuestionsForProject}
+            total={maxQuestionsForProject}
           />
 
           <TimerBadge timeLeft={timeLeft} />
@@ -257,18 +257,13 @@ export default function InterviewPage() {
       {interviewCompleted && !finalReport && (
         <div style={{ marginTop: 32, textAlign: "center" }}>
           <h2>Your interview has been completed</h2>
-          <p style={{ marginTop: 8, color: "#555" }}>
-            Click below to generate your interview feedback report.
+          <p style={{ color: "#555" }}>
+            Click below to generate your interview feedback.
           </p>
 
           <button
             onClick={generateFinalReport}
-            style={{
-              marginTop: 16,
-              padding: "10px 20px",
-              fontSize: 16,
-              cursor: "pointer",
-            }}
+            style={{ marginTop: 16, padding: "10px 20px", fontSize: 16 }}
           >
             Generate Final Report
           </button>
