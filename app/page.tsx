@@ -1,55 +1,78 @@
-export default function Home() {
+export default function LandingPage() {
   return (
-    <main className="min-h-screen bg-slate-950 text-white hero-background">
-      <div className="hero-content mx-auto max-w-6xl px-6 py-16">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-          AI Project Viva Interview
+    <main
+      style={{
+        minHeight: "100vh",
+        backgroundImage: `
+          linear-gradient(
+            rgba(0,0,0,0.8),
+            rgba(0,0,0,0.8)
+          ),
+          url('/images/codingninjas-logo.png')
+        `,
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "center",
+        backgroundSize: "600px",
+        color: "white",
+        padding: "60px 20px",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "900px",
+          margin: "0 auto",
+          textAlign: "center",
+        }}
+      >
+        {/* Heading */}
+        <h1 style={{ fontSize: "44px", marginBottom: "12px" }}>
+          User Interview
         </h1>
 
-        <p className="mt-4 max-w-2xl text-lg text-slate-300">
-          Upload a resume and run a timed viva-style interview with follow-up
-          questions and a final report.
-        </p>
+        {/* CTA */}
+        <a
+          href="/interview"
+          style={{
+            display: "inline-block",
+            marginTop: "24px",
+            marginBottom: "40px",
+            padding: "14px 32px",
+            backgroundColor: "#f97316",
+            color: "white",
+            borderRadius: "8px",
+            fontWeight: "bold",
+            textDecoration: "none",
+            fontSize: "16px",
+          }}
+        >
+          Start Interview
+        </a>
 
-        <div className="mt-8 flex flex-wrap gap-3">
-          <a
-            href="/interview"
-            className="rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-200"
-          >
-            Start Interview
-          </a>
+        {/* Content */}
+        <div style={{ textAlign: "left", fontSize: "16px", lineHeight: "1.7" }}>
+          <h3>Timed Answers</h3>
+          <p>Each question allows <b>160 seconds</b> to respond.</p>
 
-          <a
-            href="https://github.com/"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
-          >
-            View on GitHub
-          </a>
-        </div>
+          <h3>Voice-Based Responses</h3>
+          <ul>
+            <li>Read the question carefully, then click <b>Start Answer</b> to begin responding using your voice.</li>
+            <li>If you feel your answer is complete, click <b>Submit</b> to move to the next question.</li>
+            <li>You may reattempt the answer within the given time limit.</li>
+          </ul>
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-            <h3 className="text-base font-semibold">Timed Answers</h3>
-            <p className="mt-2 text-sm text-slate-300">
-              120 seconds per question with auto-submit support.
-            </p>
-          </div>
+          <h3>Important Instructions</h3>
+          <ul>
+            <li>Each answer must be completed within <b>160 seconds</b>. You must click <b>Start Answer</b> before speaking.</li>
+            <li>Avoid long pauses while answering. Extended silence may require you to answer the question again.</li>
+            <li>After completing all questions, click <b>Generate Report</b> to receive your interview feedback.</li>
+          </ul>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-            <h3 className="text-base font-semibold">Follow-up Logic</h3>
-            <p className="mt-2 text-sm text-slate-300">
-              Cross-questions based on your response where needed.
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-            <h3 className="text-base font-semibold">Final Report</h3>
-            <p className="mt-2 text-sm text-slate-300">
-              Strong/Medium/Weak scoring with a summary and gaps.
-            </p>
-          </div>
+          <h3>Final Report</h3>
+          <ul>
+            <li>Overall rating: <b>Strong / Medium / Weak</b></li>
+            <li>Summary of performance</li>
+            <li>Identified skill gaps and improvement areas</li>
+          </ul>
         </div>
       </div>
     </main>
