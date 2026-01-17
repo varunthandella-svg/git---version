@@ -2,6 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 
+import UploadCard from "@/app/components/UploadCard";
+import InterviewHeader from "@/app/components/InterviewHeader";
+import TimerBadge from "@/app/components/TimerBadge";
+import ReportCard from "@/app/components/ReportCard";
+
 type Evaluation = {
   question: string;
   answer: string;
@@ -149,14 +154,9 @@ export default function InterviewPage() {
   function moveToNextStep() {
     setInterviewState((prev) => {
       if (prev.questionCountForProject + 1 < prev.maxQuestionsForProject) {
-        return { ...prev, questionCountForProject: prev.questionCountForProject + 1 };
-      }
-
-      if (prev.currentProjectIndex + 1 < prev.projects.length) {
         return {
           ...prev,
-          currentProjectIndex: prev.currentProjectIndex + 1,
-          questionCountForProject: 0,
+          questionCountForProject: prev.questionCountForProject + 1,
         };
       }
 
@@ -244,18 +244,16 @@ export default function InterviewPage() {
 
   /* ========== UI ========== */
   return (
-    <main style={{ padding: 40, maxWidth: 900 }}>
-      <h2>AI Project Viva Interview</h2>
+    <main style={{ padding: 40, maxWidth: 900, margin: "auto" }}>
+      {!resumeText && (
+        <UploadCard
+          loading={loading}
+          onFileSelect={setFile}
+          onUpload={uploadResume}
+        />
+      )}
 
-      <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-
-      <br /><br />
-
-      <button onClick={uploadResume} disabled={loading}>
-        {loading ? "Processing..." : "Upload Resume"}
-      </button>
-
-      {resumeText && (
+      {resumeText && !question && (
         <button onClick={startInterview} style={{ marginTop: 20 }}>
           Start Interview
         </button>
@@ -263,17 +261,28 @@ export default function InterviewPage() {
 
       {question && !interviewState.interviewCompleted && (
         <div style={{ marginTop: 30 }}>
-          <h3>{question}</h3>
-          <p><b>Time Left:</b> {timeLeft}s</p>
+          <InterviewHeader
+            current={evaluations.length + 1}
+            total={interviewState.maxQuestionsForProject}
+          />
 
-          <button onClick={startRecording} disabled={listening || timeLeft === 0}>
+          <TimerBadge timeLeft={timeLeft} />
+
+          <h3 style={{ marginTop: 16 }}>{question}</h3>
+
+          <button
+            onClick={startRecording}
+            disabled={listening || timeLeft === 0}
+          >
             {listening ? "Listening..." : "Start Answering"}
           </button>
 
           {answerText && (
-            <div>
+            <div style={{ marginTop: 12 }}>
               <p>{answerText}</p>
-              <button onClick={submitAnswerAndGetFollowUp}>Submit Answer</button>
+              <button onClick={submitAnswerAndGetFollowUp}>
+                Submit Answer
+              </button>
             </div>
           )}
         </div>
@@ -286,20 +295,7 @@ export default function InterviewPage() {
         </div>
       )}
 
-      {finalReport && (
-        <div style={{ marginTop: 30, background: "#f7f7f7", padding: 20 }}>
-          <h3>Final Interview Report</h3>
-
-          <p><b>Verdict:</b> {finalReport.verdict}</p>
-          <p><b>Summary:</b> {finalReport.summary}</p>
-
-          <h4>Score</h4>
-          <p>
-            {finalReport.metrics.score} / {finalReport.metrics.maxScore} (
-            {finalReport.metrics.percentage}%)
-          </p>
-        </div>
-      )}
+      {finalReport && <ReportCard report={finalReport} />}
     </main>
   );
 }
