@@ -1,68 +1,57 @@
-import Link from "next/link";
-
-export default function LandingPage() {
+export default function Home() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white">
-      <section className="max-w-6xl mx-auto px-6 py-24">
-        <h1 className="text-4xl md:text-5xl font-bold leading-tight">
+    <main className="min-h-screen bg-slate-950 text-white hero-background">
+      <div className="hero-content mx-auto max-w-6xl px-6 py-16">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
           AI Project Viva Interview
         </h1>
 
-        <p className="mt-6 text-lg text-slate-300 max-w-2xl">
-          Upload your resume. Answer project-based questions via voice.
-          Get an AI-generated evaluation and final interview report.
+        <p className="mt-4 max-w-2xl text-lg text-slate-300">
+          Upload a resume and run a timed viva-style interview with follow-up
+          questions and a final report.
         </p>
 
-        <div className="mt-10 flex flex-col sm:flex-row gap-4">
-          <Link
+        <div className="mt-8 flex flex-wrap gap-3">
+          <a
             href="/interview"
-            className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-6 py-3 text-base font-medium hover:bg-indigo-500 transition"
+            className="rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-200"
           >
             Start Interview
-          </Link>
+          </a>
 
           <a
-            href="#how-it-works"
-            className="inline-flex items-center justify-center rounded-lg border border-white/20 px-6 py-3 text-base font-medium hover:bg-white/10 transition"
+            href="https://github.com/"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
           >
-            How it works
+            View on GitHub
           </a>
         </div>
-      </section>
 
-      {/* HOW IT WORKS */}
-      <section
-        id="how-it-works"
-        className="bg-slate-950 border-t border-white/10"
-      >
-        <div className="max-w-6xl mx-auto px-6 py-20 grid md:grid-cols-3 gap-10">
-          <div>
-            <h3 className="text-xl font-semibold">1. Upload Resume</h3>
-            <p className="mt-3 text-slate-400">
-              AI reads your resume and identifies your key projects.
+        <div className="mt-12 grid gap-6 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <h3 className="text-base font-semibold">Timed Answers</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              120 seconds per question with auto-submit support.
             </p>
           </div>
 
-          <div>
-            <h3 className="text-xl font-semibold">2. Voice Interview</h3>
-            <p className="mt-3 text-slate-400">
-              Answer time-bound project questions using voice only.
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <h3 className="text-base font-semibold">Follow-up Logic</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Cross-questions based on your response where needed.
             </p>
           </div>
 
-          <div>
-            <h3 className="text-xl font-semibold">3. AI Evaluation</h3>
-            <p className="mt-3 text-slate-400">
-              Get structured feedback, scoring, strengths, and gaps.
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <h3 className="text-base font-semibold">Final Report</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Strong/Medium/Weak scoring with a summary and gaps.
             </p>
           </div>
         </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="border-t border-white/10 py-6 text-center text-slate-500 text-sm">
-        © {new Date().getFullYear()} AI Project Viva
-      </footer>
+      </div>
     </main>
   );
 }

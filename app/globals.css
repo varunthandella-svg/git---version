@@ -1,26 +1,22 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ===== Coding Ninjas watermark background ===== */
+.hero-background {
+  position: relative;
+  overflow: hidden;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.hero-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/images/codingninjas-logo.webp");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: min(70vw, 520px);
+  opacity: 0.05; /* watermark strength */
+  pointer-events: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.hero-content {
+  position: relative;
+  z-index: 10;
 }
