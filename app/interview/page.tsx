@@ -15,49 +15,34 @@ type Evaluation = {
 };
 
 export default function InterviewPage() {
+  const QUESTION_TIME = 160;
+  const MAX_QUESTIONS = 3;
+
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [resumeText, setResumeText] = useState("");
   const [question, setQuestion] = useState("");
 
-  // 🎤 AUDIO
   const [listening, setListening] = useState(false);
   const [answerText, setAnswerText] = useState("");
 
-  // ⏱ TIMER (160 seconds)
-  const QUESTION_TIME = 160;
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const recognitionRef = useRef<any>(null);
 
-  // 🧠 INTERVIEW CONFIG
-  const MAX_QUESTIONS = 3;
-
-  // 📊 EVALUATIONS
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-
-  // 🧾 FINAL REPORT
   const [finalReport, setFinalReport] = useState<any>(null);
 
-  // ✅ SINGLE SOURCE OF TRUTH (THIS FIXES YOUR BUG)
   const isInterviewFinished = evaluations.length >= MAX_QUESTIONS;
 
-  /* ================= SCORE MAP ================= */
-  function mapScore(score: "Strong" | "Medium" | "Weak") {
-    if (score === "Strong") return 4;
-    if (score === "Medium") return 2;
-    return 0;
-  }
-
-  /* ================= PDF EXTRACTION ================= */
+  /* ================= PDF ================= */
   async function extractPdfText(file: File): Promise<string> {
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
     const workerSrc = new URL(
       "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
       import.meta.url
     ).toString();
-
     pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
     const arrayBuffer = await file.arrayBuffer();
@@ -92,7 +77,7 @@ export default function InterviewPage() {
     });
 
     const data = await res.json();
-    setResumeText(data.extractedText || "");
+    setResumeText(data?.extractedText || "");
     setLoading(false);
   }
 
@@ -105,7 +90,7 @@ export default function InterviewPage() {
     });
 
     const data = await res.json();
-    setQuestion(data.question);
+    setQuestion(data?.question || "");
   }
 
   /* ================= TIMER ================= */
@@ -118,9 +103,8 @@ export default function InterviewPage() {
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current!);
-          timerRef.current = null;
-          if (answerText) submitAnswerAndGetFollowUp();
+          stopRecording();
+          submitAnswerAndGetFollowUp();
           return 0;
         }
         return prev - 1;
@@ -132,7 +116,7 @@ export default function InterviewPage() {
     };
   }, [question]);
 
-  /* ================= AUDIO ================= */
+  /* ================= AUDIO (FIXED) ================= */
   function startRecording() {
     if (listening) return;
 
@@ -147,11 +131,8 @@ export default function InterviewPage() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-
-    recognition.onstart = () => {
-      setListening(true);
-      setAnswerText("");
-    };
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
     recognition.onresult = (event: any) => {
       setAnswerText((prev) =>
@@ -161,13 +142,29 @@ export default function InterviewPage() {
       );
     };
 
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      if (timeLeft > 0 && listening) {
+        recognition.start(); // 🔁 auto-restart
+      }
+    };
+
+    recognitionRef.current = recognition;
+    setListening(true);
     recognition.start();
   }
 
-  /* ================= SUBMIT ANSWER ================= */
+  function stopRecording() {
+    setListening(false);
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.stop();
+    }
+  }
+
+  /* ================= SUBMIT ================= */
   async function submitAnswerAndGetFollowUp() {
-    if (timerRef.current) clearInterval(timerRef.current);
+    stopRecording();
+    if (!answerText) return;
 
     const res = await fetch("/api/follow-up-question", {
       method: "POST",
@@ -177,29 +174,16 @@ export default function InterviewPage() {
 
     const data = await res.json();
 
-    if (data.evaluation) {
-      setEvaluations((prev) => [
-        ...prev,
-        {
-          question,
-          answer: answerText,
-          score: data.evaluation.score,
-          reasoning: data.evaluation.reasoning,
-        },
-      ]);
+    if (data?.evaluation) {
+      setEvaluations((prev) => [...prev, data.evaluation]);
     }
 
-    setQuestion(data.nextQuestion || "");
     setAnswerText("");
+    setQuestion(data?.nextQuestion || "");
   }
 
   /* ================= FINAL REPORT ================= */
   async function generateFinalReport() {
-    const total = evaluations.length;
-    const score = evaluations.reduce((s, e) => s + mapScore(e.score), 0);
-    const maxScore = total * 4;
-    const percentage = Math.round((score / maxScore) * 100);
-
     const res = await fetch("/api/generate-report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -207,11 +191,7 @@ export default function InterviewPage() {
     });
 
     const data = await res.json();
-
-    setFinalReport({
-      ...data,
-      metrics: { total, score, maxScore, percentage },
-    });
+    setFinalReport(data || {});
   }
 
   /* ================= UI ================= */
@@ -226,44 +206,34 @@ export default function InterviewPage() {
       )}
 
       {resumeText && !question && !isInterviewFinished && (
-        <button onClick={startInterview} style={{ marginTop: 20 }}>
-          Start Interview
-        </button>
+        <button onClick={startInterview}>Start Interview</button>
       )}
 
       {question && !isInterviewFinished && (
-        <div style={{ marginTop: 30 }}>
+        <>
           <InterviewHeader
             current={evaluations.length + 1}
             total={MAX_QUESTIONS}
           />
-
           <TimerBadge timeLeft={timeLeft} />
+          <h3>{question}</h3>
 
-          <h3 style={{ marginTop: 16 }}>{question}</h3>
-
-          <button onClick={startRecording} disabled={timeLeft === 0}>
-            {listening ? "Listening..." : "Start Answering"}
+          <button onClick={startRecording} disabled={listening}>
+            {listening ? "Recording..." : "Start Answer"}
           </button>
 
-          {answerText && (
-            <div style={{ marginTop: 12 }}>
-              <p>{answerText}</p>
-              <button onClick={submitAnswerAndGetFollowUp}>
-                Submit Answer
-              </button>
-            </div>
-          )}
-        </div>
+          <p style={{ marginTop: 10 }}>{answerText}</p>
+
+          <button onClick={submitAnswerAndGetFollowUp}>
+            Submit Answer
+          </button>
+        </>
       )}
 
       {isInterviewFinished && !finalReport && (
-        <div style={{ marginTop: 40, textAlign: "center" }}>
-          <h2>Interview Completed</h2>
-          <button onClick={generateFinalReport}>
-            Generate Final Report
-          </button>
-        </div>
+        <button onClick={generateFinalReport}>
+          Generate Final Report
+        </button>
       )}
 
       {finalReport && <ReportCard report={finalReport} />}
