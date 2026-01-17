@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-
 import UploadCard from "@/app/components/UploadCard";
 import InterviewHeader from "@/app/components/InterviewHeader";
 import TimerBadge from "@/app/components/TimerBadge";
@@ -14,66 +13,41 @@ type Evaluation = {
   reasoning: string;
 };
 
-export default function InterviewPage() {
-  const QUESTION_TIME = 160;
-  const MAX_QUESTIONS = 3;
+const QUESTION_TIME = 160;
+const TOTAL_QUESTIONS = 3;
 
+export default function InterviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [resumeText, setResumeText] = useState("");
   const [question, setQuestion] = useState("");
-
-  const [listening, setListening] = useState(false);
   const [answerText, setAnswerText] = useState("");
 
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
   const recognitionRef = useRef<any>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-  const [finalReport, setFinalReport] = useState<any>(null);
+  const [finalReport, setFinalReport] = useState<any | null>(null);
 
-  const isInterviewFinished = evaluations.length >= MAX_QUESTIONS;
+  const interviewCompleted = evaluations.length >= TOTAL_QUESTIONS;
 
-  /* ================= PDF ================= */
-  async function extractPdfText(file: File): Promise<string> {
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const workerSrc = new URL(
-      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-      import.meta.url
-    ).toString();
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
-
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-    let text = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map((item: any) => item.str).join(" ") + "\n";
-    }
-    return text;
-  }
-
-  /* ================= UPLOAD ================= */
+  /* ===================== UPLOAD ===================== */
   async function uploadResume() {
     if (!file) return;
-
     setLoading(true);
-    setResumeText("");
-    setQuestion("");
-    setAnswerText("");
     setEvaluations([]);
     setFinalReport(null);
-
-    const text = await extractPdfText(file);
+    setQuestion("");
+    setAnswerText("");
 
     const res = await fetch("/api/upload-resume", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: file.name, text }),
+      body: JSON.stringify({ filename: file.name, text: "resume" }),
     });
 
     const data = await res.json();
@@ -81,7 +55,7 @@ export default function InterviewPage() {
     setLoading(false);
   }
 
-  /* ================= START INTERVIEW ================= */
+  /* ===================== START INTERVIEW ===================== */
   async function startInterview() {
     const res = await fetch("/api/ask-question", {
       method: "POST",
@@ -93,7 +67,7 @@ export default function InterviewPage() {
     setQuestion(data?.question || "");
   }
 
-  /* ================= TIMER ================= */
+  /* ===================== TIMER ===================== */
   useEffect(() => {
     if (!question) return;
 
@@ -104,21 +78,20 @@ export default function InterviewPage() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           stopRecording();
-          submitAnswerAndGetFollowUp();
+          clearInterval(timerRef.current!);
+          submitAnswer();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => clearInterval(timerRef.current!);
   }, [question]);
 
-  /* ================= AUDIO (FIXED) ================= */
+  /* ===================== AUDIO (FIXED) ===================== */
   function startRecording() {
-    if (listening) return;
+    if (isRecording) return;
 
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
@@ -131,8 +104,8 @@ export default function InterviewPage() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-    recognition.continuous = false;
     recognition.interimResults = false;
+    recognition.continuous = false;
 
     recognition.onresult = (event: any) => {
       setAnswerText((prev) =>
@@ -143,26 +116,23 @@ export default function InterviewPage() {
     };
 
     recognition.onend = () => {
-      if (timeLeft > 0 && listening) {
-        recognition.start(); // 🔁 auto-restart
+      if (timeLeft > 0 && isRecording) {
+        recognition.start(); // auto-restart
       }
     };
 
     recognitionRef.current = recognition;
-    setListening(true);
+    setIsRecording(true);
     recognition.start();
   }
 
   function stopRecording() {
-    setListening(false);
-    if (recognitionRef.current) {
-      recognitionRef.current.onend = null;
-      recognitionRef.current.stop();
-    }
+    setIsRecording(false);
+    recognitionRef.current?.stop();
   }
 
-  /* ================= SUBMIT ================= */
-  async function submitAnswerAndGetFollowUp() {
+  /* ===================== SUBMIT ANSWER ===================== */
+  async function submitAnswer() {
     stopRecording();
     if (!answerText) return;
 
@@ -182,7 +152,7 @@ export default function InterviewPage() {
     setQuestion(data?.nextQuestion || "");
   }
 
-  /* ================= FINAL REPORT ================= */
+  /* ===================== FINAL REPORT ===================== */
   async function generateFinalReport() {
     const res = await fetch("/api/generate-report", {
       method: "POST",
@@ -191,49 +161,37 @@ export default function InterviewPage() {
     });
 
     const data = await res.json();
-    setFinalReport(data || {});
+    setFinalReport(data || { verdict: "N/A" });
   }
 
-  /* ================= UI ================= */
+  /* ===================== UI ===================== */
   return (
     <main style={{ padding: 40, maxWidth: 900, margin: "auto" }}>
       {!resumeText && (
-        <UploadCard
-          loading={loading}
-          onFileSelect={setFile}
-          onUpload={uploadResume}
-        />
+        <UploadCard loading={loading} onFileSelect={setFile} onUpload={uploadResume} />
       )}
 
-      {resumeText && !question && !isInterviewFinished && (
+      {resumeText && !question && !interviewCompleted && (
         <button onClick={startInterview}>Start Interview</button>
       )}
 
-      {question && !isInterviewFinished && (
+      {question && !interviewCompleted && (
         <>
-          <InterviewHeader
-            current={evaluations.length + 1}
-            total={MAX_QUESTIONS}
-          />
+          <InterviewHeader current={evaluations.length + 1} total={TOTAL_QUESTIONS} />
           <TimerBadge timeLeft={timeLeft} />
           <h3>{question}</h3>
 
-          <button onClick={startRecording} disabled={listening}>
-            {listening ? "Recording..." : "Start Answer"}
+          <button onClick={startRecording} disabled={isRecording}>
+            {isRecording ? "Recording..." : "Start Answer"}
           </button>
 
-          <p style={{ marginTop: 10 }}>{answerText}</p>
-
-          <button onClick={submitAnswerAndGetFollowUp}>
-            Submit Answer
-          </button>
+          <p>{answerText}</p>
+          <button onClick={submitAnswer}>Submit Answer</button>
         </>
       )}
 
-      {isInterviewFinished && !finalReport && (
-        <button onClick={generateFinalReport}>
-          Generate Final Report
-        </button>
+      {interviewCompleted && !finalReport && (
+        <button onClick={generateFinalReport}>Generate Final Report</button>
       )}
 
       {finalReport && <ReportCard report={finalReport} />}
