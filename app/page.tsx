@@ -35,7 +35,7 @@ export default function LandingPage() {
             marginBottom: "24px",
           }}
         >
-          User Interview
+          Project Based AI Interview
         </h1>
 
         {/* CTA */}
