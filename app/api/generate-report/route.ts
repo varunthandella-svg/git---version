@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
-
 type Evaluation = {
   question: string;
   answer: string;
@@ -17,58 +15,38 @@ export async function POST(req: Request) {
       ? body.evaluations
       : [];
 
-    // Defensive fallback
-    if (evaluations.length === 0) {
-      return NextResponse.json({
-        verdict: "Weak",
-        summary: "No valid responses were recorded during the interview.",
-        projectBreakdown: {
-          strengths: [],
-          gaps: ["No evaluable answers submitted"],
-        },
-      });
-    }
+    // ❌ SCORING REMOVED (as per your requirement)
+    // We will generate report purely from interaction quality
 
-    const strong = evaluations.filter(
-      (e: Evaluation) => e.score === "Strong"
-    ).length;
+    const strengths: string[] = [];
+    const improvements: string[] = [];
 
-    const medium = evaluations.filter(
-      (e: Evaluation) => e.score === "Medium"
-    ).length;
-
-    const weak = evaluations.filter(
-      (e: Evaluation) => e.score === "Weak"
-    ).length;
-
-    // Verdict logic (simple & reliable)
-    let verdict: "Strong" | "Medium" | "Weak" = "Weak";
-
-    if (strong >= medium && strong >= weak) verdict = "Strong";
-    else if (medium >= strong && medium >= weak) verdict = "Medium";
-
-    // IMPORTANT: strengths & gaps MUST come from interview answers,
-    // NOT resume (as per your requirement)
-    const strengths = evaluations
-      .filter((e) => e.score === "Strong")
-      .map((e) => e.reasoning);
-
-    const gaps = evaluations
-      .filter((e) => e.score === "Weak")
-      .map((e) => e.reasoning);
+    evaluations.forEach((e: Evaluation) => {
+      if (e.score === "Strong") {
+        strengths.push(e.reasoning);
+      } else if (e.score === "Weak") {
+        improvements.push(e.reasoning);
+      }
+    });
 
     return NextResponse.json({
-      verdict,
+      verdict:
+        improvements.length === 0
+          ? "Strong"
+          : improvements.length <= 2
+          ? "Medium"
+          : "Weak",
+
       summary:
-        "The evaluation is based entirely on the candidate’s spoken responses and interaction quality during the interview.",
+        "This report is generated based on your interview responses and interaction quality.",
+
       projectBreakdown: {
         strengths,
-        gaps,
+        gaps: improvements,
       },
     });
-  } catch (error) {
-    console.error("Generate report error:", error);
-
+  } catch (err) {
+    console.error("generate-report error:", err);
     return NextResponse.json(
       { error: "Failed to generate report" },
       { status: 500 }

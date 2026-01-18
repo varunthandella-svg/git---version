@@ -1,42 +1,38 @@
-// app/lib/interviewSession.ts
-
-export type InterviewSession = {
-  projects: string[];
-  skills: string[];
+type InterviewSession = {
   questions: string[];
   askedQuestions: string[];
 };
 
 let session: InterviewSession | null = null;
 
-export function initSession(projects: string[], skills: string[]) {
+/* ================= INITIALIZE SESSION ================= */
+export function initInterviewSession(questions: string[]) {
   session = {
-    projects,
-    skills,
-    questions: [],
+    questions,
     askedQuestions: [],
   };
 }
 
-export function getSession() {
-  return session;
-}
-
-export function setQuestions(questions: string[]) {
-  if (!session) return;
-  session.questions = questions;
-}
-
+/* ================= GET NEXT QUESTION ================= */
 export function getNextQuestion(): string | null {
-  if (!session) return null;
+  // ✅ HARD GUARD (THIS FIXES YOUR ERROR)
+  if (!session) {
+    return null;
+  }
 
   const remaining = session.questions.filter(
-    (q) => !session.askedQuestions.includes(q)
+    (q) => !session!.askedQuestions.includes(q)
   );
 
   if (remaining.length === 0) return null;
 
   const next = remaining[0];
   session.askedQuestions.push(next);
+
   return next;
+}
+
+/* ================= RESET SESSION ================= */
+export function resetInterviewSession() {
+  session = null;
 }
