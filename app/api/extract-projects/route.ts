@@ -1,53 +1,90 @@
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
+/**
+ * Very safe project extractor.
+ * Never throws.
+ * Never returns 400.
+ */
 export async function POST(req: Request) {
   try {
-    const { project } = await req.json();
+    const body = await req.json();
+    const resumeText: string = body?.resumeText || "";
 
-    if (!project) {
-      return NextResponse.json(
-        { error: "project missing" },
-        { status: 400 }
-      );
+    if (!resumeText || resumeText.trim().length < 50) {
+      // Fallback – resume too short or missing
+      return NextResponse.json({
+        projects: [{ name: "Primary Project" }],
+      });
     }
 
-    const prompt = `
-You are a technical interviewer.
+    const text = resumeText.toLowerCase();
 
-Ask ONE clear interview question based on this project.
+    const projects: { name: string; tech?: string[] }[] = [];
 
-Project:
-Name: ${project.name}
-Description: ${project.description}
-Tech: ${project.tech?.join(", ")}
-
-Rules:
-- Ask only ONE question
-- It must test real understanding
-- Do NOT provide hints
-- Do NOT include answers
-`;
-
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.4,
-    });
-
-    const question = response.choices[0].message.content;
-
-    return NextResponse.json({ question });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: "question generation failed", details: err.message },
-      { status: 500 }
+    // -------- HEURISTIC 1: "Project:" / "Projects" sections
+    const projectMatches = resumeText.match(
+      /(project[s]?:|academic project[s]?:)([\s\S]{0,1200})/i
     );
+
+    if (projectMatches) {
+      const block = projectMatches[2];
+
+      const lines = block
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      for (const line of lines) {
+        // Stop if we hit Experience / Skills etc.
+        if (
+          /experience|education|skills|certification|internship/i.test(line)
+        ) {
+          break;
+        }
+
+        // Likely project title line
+        if (
+          line.length > 5 &&
+          line.length < 80 &&
+          !line.includes(":") &&
+          !line.includes("•")
+        ) {
+          projects.push({ name: line });
+        }
+      }
+    }
+
+    // -------- HEURISTIC 2: Bullet-style projects
+    const bulletProjects = resumeText.match(
+      /•\s*(.+project.+)/gi
+    );
+    if (bulletProjects) {
+      bulletProjects.forEach((p) => {
+        const cleaned = p.replace("•", "").trim();
+        if (cleaned.length < 80) {
+          projects.push({ name: cleaned });
+        }
+      });
+    }
+
+    // -------- Deduplicate
+    const unique = new Map<string, any>();
+    for (const p of projects) {
+      unique.set(p.name.toLowerCase(), p);
+    }
+
+    const finalProjects =
+      unique.size > 0
+        ? Array.from(unique.values()).slice(0, 3)
+        : [{ name: "Primary Project" }];
+
+    return NextResponse.json({
+      projects: finalProjects,
+    });
+  } catch (err) {
+    // ABSOLUTE SAFETY FALLBACK
+    return NextResponse.json({
+      projects: [{ name: "Primary Project" }],
+    });
   }
 }
