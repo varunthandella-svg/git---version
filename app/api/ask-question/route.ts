@@ -1,90 +1,41 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-import {
-  initSession,
-  setQuestions,
-  getNextQuestion,
-} from "@/app/lib/interviewSession";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+function pickQuestion(projectName: string, tech: string[], asked: string[]) {
+  const t = (tech || []).slice(0, 6).join(", ");
+
+  const pool = [
+    `In your project "${projectName}", what problem were you solving and who was the end user?`,
+    `Explain the dataset / inputs you used in "${projectName}". How did you clean or validate them?`,
+    `Walk me through the end-to-end flow of "${projectName}" from input to output.`,
+    `What were your exact contributions in "${projectName}"? What did you build yourself?`,
+    `What was the hardest bug or issue in "${projectName}" and how did you fix it?`,
+    `How did you measure success in "${projectName}" (accuracy, KPIs, performance, speed)?`,
+    t
+      ? `In "${projectName}", where exactly did you use ${t}? Explain one concrete example.`
+      : `In "${projectName}", explain one technical decision you made and why.`,
+  ];
+
+  for (const q of pool) {
+    if (!asked.includes(q)) return q;
+  }
+  return `In "${projectName}", explain one improvement you would do if you had 1 more week.`;
+}
 
 export async function POST(req: Request) {
   try {
-    const { resumeText } = await req.json();
+    const body = await req.json();
+    const project = body.project || { name: "Primary Project", tech: [] };
+    const askedQuestions: string[] = body.askedQuestions || [];
 
-    // STEP 1: Extract projects & skills
-    const extractPrompt = `
-From the resume below:
-1. Identify ALL projects (names only)
-2. Identify core skills
+    const projectName = project?.name || "Primary Project";
+    const tech = Array.isArray(project?.tech) ? project.tech : [];
 
-Return JSON:
-{
-  "projects": [],
-  "skills": []
-}
+    const question = pickQuestion(projectName, tech, askedQuestions);
 
-Resume:
-${resumeText}
-`;
-
-    const extractRes = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: extractPrompt }],
-    });
-
-    const extracted = JSON.parse(
-      extractRes.choices[0].message.content || "{}"
-    );
-
-    const projects: string[] = extracted.projects || [];
-    const skills: string[] = extracted.skills || [];
-
-    // Initialize interview memory
-    initSession(projects, skills);
-
-    // STEP 2: Generate QUESTION POOL
-    const questionPrompt = `
-You are an interviewer.
-
-Based on these projects:
-${projects.join(", ")}
-
-And these skills:
-${skills.join(", ")}
-
-Generate 6 technical interview questions:
-- Project-specific
-- NOT generic
-- Each question must be unique
-- No theory-only questions
-
-Return as JSON array:
-["Q1", "Q2", "Q3"]
-`;
-
-    const questionRes = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: questionPrompt }],
-    });
-
-    const questions: string[] = JSON.parse(
-      questionRes.choices[0].message.content || "[]"
-    );
-
-    setQuestions(questions);
-
-    const firstQuestion = getNextQuestion();
-
-    return NextResponse.json({
-      question: firstQuestion,
-    });
-  } catch (err) {
-    console.error("ask-question error:", err);
+    return NextResponse.json({ question });
+  } catch (e: any) {
     return NextResponse.json(
-      { error: "Failed to generate question" },
+      { error: "ask-question failed", details: String(e?.message || e) },
       { status: 500 }
     );
   }

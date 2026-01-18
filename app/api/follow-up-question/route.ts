@@ -1,50 +1,75 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-import { getNextQuestion } from "@/app/lib/interviewSession";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+function evaluateAnswer(answer: string) {
+  const a = (answer || "").trim();
+
+  if (a.length < 15) {
+    return {
+      score: "Weak" as const,
+      reasoning: "Answer is too short. Needs clear explanation of your steps and contribution.",
+    };
+  }
+
+  if (a.length < 60) {
+    return {
+      score: "Medium" as const,
+      reasoning: "Answer has some clarity but lacks depth, examples, and technical specifics.",
+    };
+  }
+
+  return {
+    score: "Strong" as const,
+    reasoning: "Answer is detailed with clear reasoning, flow, and project ownership signals.",
+  };
+}
+
+function nextProjectQuestion(projectName: string, asked: string[]) {
+  const pool = [
+    `In "${projectName}", explain your data cleaning / preprocessing steps clearly.`,
+    `In "${projectName}", what were the key metrics / KPIs and why?`,
+    `In "${projectName}", describe your architecture / approach in a structured way.`,
+    `In "${projectName}", explain one optimization you did (time, memory, queries, performance).`,
+  ];
+
+  for (const q of pool) {
+    if (!asked.includes(q)) return q;
+  }
+  return "";
+}
 
 export async function POST(req: Request) {
   try {
-    const { question, answer } = await req.json();
+    const body = await req.json();
 
-    const evalPrompt = `
-Evaluate the candidate answer.
+    const question = body.question || "";
+    const answer = body.answer || "";
+    const askedQuestions: string[] = body.askedQuestions || [];
+    const project = body.project || { name: "Primary Project" };
 
-Question:
-${question}
+    const questionCountForProject = Number(body.questionCountForProject || 0);
+    const maxQuestionsPerProject = Number(body.maxQuestionsPerProject || 2);
 
-Answer:
-${answer}
+    const evaluation = evaluateAnswer(answer);
 
-Return JSON:
-{
-  "score": "Strong | Medium | Weak",
-  "reasoning": "short explanation"
-}
-`;
+    // If we still need more questions for this project -> return nextQuestion
+    const nextNeeded = questionCountForProject + 1 < maxQuestionsPerProject;
 
-    const evalRes = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: evalPrompt }],
-    });
+    if (nextNeeded) {
+      const q = nextProjectQuestion(project.name, askedQuestions);
+      return NextResponse.json({
+        evaluation,
+        nextQuestion: q || "",
+      });
+    }
 
-    const evaluation = JSON.parse(
-      evalRes.choices[0].message.content || "{}"
-    );
-
-    const nextQuestion = getNextQuestion();
-
+    // project finished -> return empty nextQuestion so client moves to next project
     return NextResponse.json({
       evaluation,
-      nextQuestion,
+      nextQuestion: "",
     });
-  } catch (err) {
-    console.error("follow-up error:", err);
+  } catch (e: any) {
     return NextResponse.json(
-      { error: "Failed follow-up" },
+      { error: "follow-up-question failed", details: String(e?.message || e) },
       { status: 500 }
     );
   }
