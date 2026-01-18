@@ -1,4 +1,4 @@
-export type InterviewSession = {
+type InterviewSession = {
   projects: { name: string }[];
   questions: string[];
   askedQuestions: string[];
@@ -6,8 +6,7 @@ export type InterviewSession = {
 
 let session: InterviewSession | null = null;
 
-/* ===== INIT SESSION ===== */
-export function initInterviewSession(projects: { name: string }[]) {
+export function initSession(projects: { name: string }[]) {
   session = {
     projects,
     questions: [],
@@ -15,14 +14,12 @@ export function initInterviewSession(projects: { name: string }[]) {
   };
 }
 
-/* ===== SET QUESTIONS ===== */
-export function setInterviewQuestions(questions: string[]) {
+export function setQuestions(questions: string[]) {
   if (!session) return;
   session.questions = questions;
 }
 
-/* ===== GET NEXT QUESTION ===== */
-export function getNextInterviewQuestion(): string | null {
+export function getNextQuestion(): string | null {
   if (!session) return null;
 
   const remaining = session.questions.filter(
@@ -36,12 +33,10 @@ export function getNextInterviewQuestion(): string | null {
   return next;
 }
 
-/* ===== RESET ===== */
-export function resetInterviewSession() {
+export function resetSession() {
   session = null;
 }
 
-/* ===== DEBUG ===== */
-export function getInterviewSession() {
+export function getSession() {
   return session;
 }

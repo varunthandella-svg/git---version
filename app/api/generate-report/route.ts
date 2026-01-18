@@ -1,55 +1,26 @@
 import { NextResponse } from "next/server";
 
-type Evaluation = {
-  question: string;
-  answer: string;
-  score: "Strong" | "Medium" | "Weak";
-  reasoning: string;
-};
-
 export async function POST(req: Request) {
-  try {
-    const body = await req.json();
+  const body = await req.json();
+  const evaluations = Array.isArray(body.evaluations) ? body.evaluations : [];
 
-    const evaluations: Evaluation[] = Array.isArray(body.evaluations)
-      ? body.evaluations
-      : [];
+  const strengths: string[] = [];
+  const gaps: string[] = [];
 
-    // ❌ SCORING REMOVED (as per your requirement)
-    // We will generate report purely from interaction quality
+  evaluations.forEach((e: any) => {
+    if (e.answer.length > 100) {
+      strengths.push("Clear explanation and sufficient depth in answers.");
+    } else {
+      gaps.push("Answers lacked depth or concrete implementation details.");
+    }
+  });
 
-    const strengths: string[] = [];
-    const improvements: string[] = [];
-
-    evaluations.forEach((e: Evaluation) => {
-      if (e.score === "Strong") {
-        strengths.push(e.reasoning);
-      } else if (e.score === "Weak") {
-        improvements.push(e.reasoning);
-      }
-    });
-
-    return NextResponse.json({
-      verdict:
-        improvements.length === 0
-          ? "Strong"
-          : improvements.length <= 2
-          ? "Medium"
-          : "Weak",
-
-      summary:
-        "This report is generated based on your interview responses and interaction quality.",
-
-      projectBreakdown: {
-        strengths,
-        gaps: improvements,
-      },
-    });
-  } catch (err) {
-    console.error("generate-report error:", err);
-    return NextResponse.json(
-      { error: "Failed to generate report" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    verdict: "Interview Completed",
+    summary: "Feedback is based purely on your interview responses.",
+    projectBreakdown: {
+      strengths: strengths.length ? strengths : ["Good overall understanding."],
+      gaps: gaps.length ? gaps : ["Could explain decisions more clearly."],
+    },
+  });
 }

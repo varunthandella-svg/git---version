@@ -1,49 +1,46 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+import {
+  initInterviewSession,
+  setInterviewQuestions,
+  getNextInterviewQuestion,
+} from "@/app/lib/interviewSession";
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const resumeText = body.resumeText || "";
-    const project = body.project || { name: "Primary Project" };
+  const body = await req.json();
+  const projects = body.projects;
 
-    const prompt = `
-You are an experienced technical interviewer.
-
-Candidate resume:
-${resumeText}
-
-Project under discussion:
-${project.name}
-
-Rules:
-- Ask ONLY one question
-- Question must be directly related to this project
-- Ask implementation-level or decision-level questions
-- Avoid generic questions
-- No greetings or explanations
-
-Ask the first interview question now.
-`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.6,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const question = response.choices[0].message.content?.trim();
-
-    return NextResponse.json({
-      question: question || `Explain your role in the ${project.name} project.`,
-    });
-  } catch (err) {
-    return NextResponse.json({
-      question: "Explain your project end-to-end and your exact contribution.",
-    });
+  if (!projects || projects.length === 0) {
+    return NextResponse.json(
+      { error: "No projects found" },
+      { status: 400 }
+    );
   }
+
+  // 1️⃣ Initialize session
+  initInterviewSession(projects);
+
+  // 2️⃣ Create deterministic project-based questions
+  const questions: string[] = [];
+
+  projects.forEach((project: any) => {
+    questions.push(
+      `Explain the project "${project.name}" and your exact contribution.`
+    );
+    questions.push(
+      `What technical challenges did you face in "${project.name}" and how did you solve them?`
+    );
+    questions.push(
+      `If you had to improve "${project.name}" today, what would you change and why?`
+    );
+  });
+
+  // 3️⃣ Store questions
+  setInterviewQuestions(questions);
+
+  // 4️⃣ Ask first question
+  const firstQuestion = getNextInterviewQuestion();
+
+  return NextResponse.json({
+    question: firstQuestion,
+  });
 }
