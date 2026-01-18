@@ -1,49 +1,51 @@
 type ReportProps = {
   report: {
-    verdict: "Strong" | "Medium" | "Weak";
-    summary: string;
-    strengths: string[];
-    improvements: string[];
+    overallSummary?: string;
+    strengths?: string[];
+    improvements?: string[];
   };
 };
 
 export default function ReportCard({ report }: ReportProps) {
-  const verdictClass =
-    report.verdict === "Strong"
-      ? "badge-success"
-      : report.verdict === "Medium"
-      ? "badge-warning"
-      : "badge-danger";
+  if (!report) return null;
 
   return (
-    <div className="card" style={{ marginTop: 32 }}>
-      <h2 style={{ marginBottom: 12 }}>Interview Report</h2>
+    <div
+      style={{
+        marginTop: 40,
+        padding: 24,
+        borderRadius: 12,
+        background: "#0f172a",
+        color: "#e5e7eb",
+      }}
+    >
+      <h2 style={{ fontSize: 22, marginBottom: 12 }}>
+        Interview Feedback Report
+      </h2>
 
-      <span className={`badge ${verdictClass}`}>
-        Overall Rating: {report.verdict}
-      </span>
-
-      <p style={{ marginTop: 16 }} className="muted">
-        {report.summary}
+      <p style={{ marginBottom: 20, color: "#cbd5f5" }}>
+        {report.overallSummary || "Summary not available."}
       </p>
 
-      <div style={{ marginTop: 24 }}>
-        <h3>Strengths</h3>
-        <ul>
-          {report.strengths.map((s, i) => (
-            <li key={i}>✔ {s}</li>
-          ))}
-        </ul>
-      </div>
+      <h3>Strengths</h3>
+      <ul>
+        {(report.strengths || []).length === 0 && (
+          <li>No strengths identified.</li>
+        )}
+        {(report.strengths || []).map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ul>
 
-      <div style={{ marginTop: 16 }}>
-        <h3>Areas for Improvement</h3>
-        <ul>
-          {report.improvements.map((s, i) => (
-            <li key={i}>• {s}</li>
-          ))}
-        </ul>
-      </div>
+      <h3 style={{ marginTop: 16 }}>Areas for Improvement</h3>
+      <ul>
+        {(report.improvements || []).length === 0 && (
+          <li>No improvement areas identified.</li>
+        )}
+        {(report.improvements || []).map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ul>
     </div>
   );
 }

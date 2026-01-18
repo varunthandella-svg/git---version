@@ -1,56 +1,49 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
 });
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const { question, answer } = body;
 
-    const {
-      resumeText,
-      project,
-      questionIndex,
-      totalQuestions,
-      previousAnswer,
-    } = body;
+    if (!question || !answer) {
+      return NextResponse.json(
+        { error: "Question or answer missing" },
+        { status: 400 }
+      );
+    }
 
-    const prompt = `
-You are a senior technical interviewer.
-
-Candidate resume:
-${resumeText}
-
-Project context:
-${project?.name || "Project from resume"}
-
-The candidate already answered previous questions.
-
-This is question ${questionIndex + 1} out of ${totalQuestions}.
-
-Ask ONE new interview question:
-- Related to the project OR skills
-- NOT generic
-- NOT repeating earlier questions
-- Can be architecture, logic, edge cases, decisions, tradeoffs
-
-Only return the question text.
-`;
-
-    const completion = await client.chat.completions.create({
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an interview evaluator. Evaluate the candidate's answer strictly based on clarity, correctness, and depth. Do NOT generate a new question.",
+        },
+        {
+          role: "user",
+          content: `Question: ${question}\nAnswer: ${answer}`,
+        },
+      ],
+      temperature: 0.2,
     });
+
+    const feedback = completion.choices[0].message.content || "";
 
     return NextResponse.json({
-      question: completion.choices[0].message.content,
+      evaluation: {
+        feedback,
+      },
     });
-  } catch (err: any) {
+  } catch (error) {
+    console.error("FOLLOW-UP QUESTION ERROR:", error);
     return NextResponse.json(
-      { error: err.message },
+      { error: "Failed to evaluate answer" },
       { status: 500 }
     );
   }
