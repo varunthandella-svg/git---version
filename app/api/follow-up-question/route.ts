@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
-import { getNextInterviewQuestion } from "@/app/lib/interviewSession";
+import { getNextQuestion } from "@/app/lib/interviewQuestions";
 
 export async function POST() {
-  const nextQuestion = getNextInterviewQuestion();
+  try {
+    const nextQuestion = getNextQuestion();
 
-  return NextResponse.json({
-    evaluation: {
-      reasoning: "Answer recorded for final report.",
-    },
-    nextQuestion,
-  });
+    if (!nextQuestion) {
+      return NextResponse.json({
+        nextQuestion: null,
+        interviewCompleted: true,
+      });
+    }
+
+    return NextResponse.json({
+      nextQuestion,
+      interviewCompleted: false,
+    });
+  } catch (error) {
+    console.error("FOLLOW-UP ERROR:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch next question" },
+      { status: 500 }
+    );
+  }
 }
