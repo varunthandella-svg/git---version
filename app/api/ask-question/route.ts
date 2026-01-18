@@ -1,26 +1,47 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { resumeText } = body;
+    const { resumeText } = await req.json();
 
     if (!resumeText) {
       return NextResponse.json(
-        { error: "Resume text missing" },
+        { error: "Resume missing" },
         { status: 400 }
       );
     }
 
-    // TEMP STATIC QUESTION (to confirm flow works)
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an interviewer conducting a project viva. Ask ONE clear project-based question.",
+        },
+        {
+          role: "user",
+          content: resumeText,
+        },
+      ],
+      temperature: 0.4,
+    });
+
     return NextResponse.json({
-      question: "Explain one project you worked on and your role in it.",
+      question: completion.choices[0].message.content,
     });
   } catch (err) {
-    console.error("ask-question error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error("ask-question OpenAI error:", err);
+
+    // SAFE FALLBACK
+    return NextResponse.json({
+      question:
+        "Explain one project you worked on and your exact contribution.",
+    });
   }
 }

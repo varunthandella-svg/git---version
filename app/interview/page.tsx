@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-
 import UploadCard from "@/app/components/UploadCard";
 import InterviewHeader from "@/app/components/InterviewHeader";
 import TimerBadge from "@/app/components/TimerBadge";
@@ -10,46 +9,12 @@ import ReportCard from "@/app/components/ReportCard";
 type Evaluation = {
   question: string;
   answer: string;
-  reasoning: string;
 };
-
-async function postWithFallback(urls: string[], body: any) {
-  let lastErr: any = null;
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      // If route not found, try next
-      if (res.status === 404) continue;
-
-      // If server error, still read text for debugging
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} on ${url}. Body: ${txt}`);
-      }
-
-      const data = await res.json().catch(async () => {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Invalid JSON from ${url}. Body: ${txt}`);
-      });
-
-      return { urlUsed: url, data };
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-
-  throw lastErr || new Error("All fallback URLs failed.");
-}
 
 export default function InterviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [apiBusy, setApiBusy] = useState(false);
 
   const [resumeText, setResumeText] = useState("");
   const [question, setQuestion] = useState("");
@@ -59,37 +24,31 @@ export default function InterviewPage() {
   const [answerText, setAnswerText] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // ⏱ TIMER (160 sec)
+  // ⏱ TIMER (160s)
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 📊 ANSWER EVALUATIONS
+  // 📊 INTERVIEW DATA
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const maxQuestions = 3;
 
-  // 🧾 FINAL REPORT
-  const [finalReport, setFinalReport] = useState<any>(null);
-  const [generatingReport, setGeneratingReport] = useState(false);
+  // 🧾 REPORT
+  const [finalReport, setFinalReport] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
-  const MAX_QUESTIONS = 3;
-  const interviewCompleted = evaluations.length >= MAX_QUESTIONS;
+  const interviewCompleted = evaluations.length === maxQuestions;
 
-  /* ================= PDF UPLOAD ================= */
+  /* ================= UPLOAD ================= */
   async function uploadResume() {
-    if (!file) return;
-
+    if (!file || apiBusy) return;
+    setApiBusy(true);
     setLoading(true);
-    setResumeText("");
-    setQuestion("");
-    setAnswerText("");
-    setEvaluations([]);
-    setFinalReport(null);
 
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const workerSrc = new URL(
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
       "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
       import.meta.url
     ).toString();
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
     const buffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -109,31 +68,29 @@ export default function InterviewPage() {
 
     const data = await res.json();
     setResumeText(data.extractedText || "");
+
     setLoading(false);
+    setApiBusy(false);
   }
 
-  /* ================= START INTERVIEW (FIXED + FALLBACK) ================= */
+  /* ================= START INTERVIEW ================= */
   async function startInterview() {
+    if (apiBusy) return;
+    setApiBusy(true);
+
     try {
-      const { urlUsed, data } = await postWithFallback(
-        ["/api/ask-question", "/api/askquestion"],
-        {
-          resumeText,
-          project: { name: "Primary Project" },
-        }
-      );
+      const res = await fetch("/api/ask-question", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resumeText }),
+      });
 
-      console.log("ask-question url used:", urlUsed, data);
-
-      if (!data?.question) {
-        alert("Failed to start interview (no question returned).");
-        return;
-      }
-
+      const data = await res.json();
       setQuestion(data.question);
-    } catch (err: any) {
-      console.error("startInterview failed:", err);
-      alert("Error starting interview.");
+    } catch {
+      alert("Error starting interview");
+    } finally {
+      setApiBusy(false);
     }
   }
 
@@ -148,12 +105,8 @@ export default function InterviewPage() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
-          timerRef.current = null;
-
-          if (recognitionRef.current) recognitionRef.current.stop();
-
+          recognitionRef.current?.stop();
           if (answerText.trim()) submitAnswer();
-
           return 0;
         }
         return prev - 1;
@@ -165,7 +118,7 @@ export default function InterviewPage() {
     };
   }, [question]);
 
-  /* ================= AUDIO (CONTINUOUS) ================= */
+  /* ================= AUDIO ================= */
   function startRecording() {
     if (isRecording) return;
 
@@ -173,17 +126,12 @@ export default function InterviewPage() {
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
-      alert("Speech recognition not supported");
-      return;
-    }
-
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
-    recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.lang = "en-US";
 
     recognition.onstart = () => {
       setIsRecording(true);
@@ -198,60 +146,49 @@ export default function InterviewPage() {
       setAnswerText(transcript.trim());
     };
 
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
-
+    recognition.onend = () => setIsRecording(false);
     recognition.start();
   }
 
-  /* ================= SUBMIT ANSWER (FIXED + FALLBACK) ================= */
+  /* ================= SUBMIT ================= */
   async function submitAnswer() {
-    if (recognitionRef.current) recognitionRef.current.stop();
+    if (apiBusy) return;
+    setApiBusy(true);
+
+    recognitionRef.current?.stop();
     if (timerRef.current) clearInterval(timerRef.current);
 
-    try {
-      const { urlUsed, data } = await postWithFallback(
-        ["/api/follow-up-question", "/api/followup-question", "/api/followupquestion"],
-        { resumeText, question, answer: answerText }
-      );
+    setEvaluations((prev) => [
+      ...prev,
+      { question, answer: answerText },
+    ]);
 
-      console.log("follow-up url used:", urlUsed, data);
+    const res = await fetch("/api/ask-question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resumeText }),
+    });
 
-      if (data?.evaluation?.reasoning) {
-        setEvaluations((prev) => [
-          ...prev,
-          {
-            question,
-            answer: answerText,
-            reasoning: data.evaluation.reasoning,
-          },
-        ]);
-      }
+    const data = await res.json();
+    setQuestion(data.question || "");
+    setAnswerText("");
 
-      setAnswerText("");
-      setQuestion(data.nextQuestion || "");
-    } catch (err: any) {
-      console.error("submitAnswer failed:", err);
-      alert("Error submitting answer.");
-    }
+    setApiBusy(false);
   }
 
-  /* ================= FINAL REPORT ================= */
+  /* ================= REPORT ================= */
   async function generateFinalReport() {
-    setGeneratingReport(true);
-    try {
-      const { data } = await postWithFallback(
-        ["/api/generate-report", "/api/generatereport"],
-        { evaluations } // ✅ report should be based on answers only
-      );
-      setFinalReport(data);
-    } catch (err: any) {
-      console.error("generateFinalReport failed:", err);
-      alert("Error generating report.");
-    } finally {
-      setGeneratingReport(false);
-    }
+    setReportLoading(true);
+
+    const res = await fetch("/api/generate-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evaluations }),
+    });
+
+    const data = await res.json();
+    setFinalReport(data.report);
+    setReportLoading(false);
   }
 
   /* ================= UI ================= */
@@ -265,37 +202,42 @@ export default function InterviewPage() {
         />
       )}
 
-      {resumeText && !question && !interviewCompleted && (
-        <button onClick={startInterview}>Start Interview</button>
+      {resumeText && !question && evaluations.length === 0 && (
+        <button onClick={startInterview} disabled={apiBusy}>
+          Start Interview
+        </button>
       )}
 
       {question && !interviewCompleted && (
         <>
-          <InterviewHeader current={evaluations.length + 1} total={MAX_QUESTIONS} />
+          <InterviewHeader
+            current={evaluations.length + 1}
+            total={maxQuestions}
+          />
           <TimerBadge timeLeft={timeLeft} />
+          <h3>{question}</h3>
 
-          <h3 style={{ marginTop: 20 }}>{question}</h3>
-
-          <button onClick={startRecording} disabled={isRecording}>
+          <button
+            onClick={startRecording}
+            disabled={isRecording || timeLeft === 0}
+          >
             {isRecording ? "Recording..." : "Start Answering"}
           </button>
 
           {answerText && (
-            <div style={{ marginTop: 16 }}>
+            <>
               <p>{answerText}</p>
               <button onClick={submitAnswer}>Submit Answer</button>
-            </div>
+            </>
           )}
         </>
       )}
 
       {interviewCompleted && !finalReport && (
-        <div style={{ marginTop: 32, textAlign: "center" }}>
+        <div style={{ textAlign: "center" }}>
           <h2>Your interview has been completed</h2>
-          <p>Click below to generate your interview feedback.</p>
-
-          <button onClick={generateFinalReport} disabled={generatingReport}>
-            {generatingReport ? "Generating report..." : "Generate Report"}
+          <button onClick={generateFinalReport} disabled={reportLoading}>
+            {reportLoading ? "Generating report..." : "Generate Final Report"}
           </button>
         </div>
       )}
