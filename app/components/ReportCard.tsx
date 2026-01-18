@@ -1,51 +1,49 @@
-type Props = {
-  report: any;
+type ReportProps = {
+  report: {
+    verdict: "Strong" | "Medium" | "Weak";
+    summary: string;
+    strengths: string[];
+    improvements: string[];
+  };
 };
 
-export default function ReportCard({ report }: Props) {
-  if (!report) return null;
-
-  const strengths = report?.projectBreakdown?.strengths || [];
-  const gaps = report?.projectBreakdown?.gaps || [];
+export default function ReportCard({ report }: ReportProps) {
+  const verdictClass =
+    report.verdict === "Strong"
+      ? "badge-success"
+      : report.verdict === "Medium"
+      ? "badge-warning"
+      : "badge-danger";
 
   return (
-    <div style={{ marginTop: 32, background: "#f7f7f7", padding: 20 }}>
-      <h3>Final Interview Report</h3>
+    <div className="card" style={{ marginTop: 32 }}>
+      <h2 style={{ marginBottom: 12 }}>Interview Report</h2>
 
-      <p><b>Verdict:</b> {report.verdict || "N/A"}</p>
-      <p><b>Summary:</b> {report.summary || "No summary generated."}</p>
+      <span className={`badge ${verdictClass}`}>
+        Overall Rating: {report.verdict}
+      </span>
 
-      {report.metrics && (
-        <>
-          <h4>Score</h4>
-          <p>
-            {report.metrics.score} / {report.metrics.maxScore} (
-            {report.metrics.percentage}%)
-          </p>
-        </>
-      )}
+      <p style={{ marginTop: 16 }} className="muted">
+        {report.summary}
+      </p>
 
-      <h4>Strengths</h4>
-      {strengths.length === 0 ? (
-        <p>No strong areas identified.</p>
-      ) : (
+      <div style={{ marginTop: 24 }}>
+        <h3>Strengths</h3>
         <ul>
-          {strengths.map((s: string, i: number) => (
-            <li key={i}>{s}</li>
+          {report.strengths.map((s, i) => (
+            <li key={i}>✔ {s}</li>
           ))}
         </ul>
-      )}
+      </div>
 
-      <h4>Improvement Areas</h4>
-      {gaps.length === 0 ? (
-        <p>No major gaps identified.</p>
-      ) : (
+      <div style={{ marginTop: 16 }}>
+        <h3>Areas for Improvement</h3>
         <ul>
-          {gaps.map((g: string, i: number) => (
-            <li key={i}>{g}</li>
+          {report.improvements.map((s, i) => (
+            <li key={i}>• {s}</li>
           ))}
         </ul>
-      )}
+      </div>
     </div>
   );
 }

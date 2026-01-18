@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+
 import UploadCard from "@/app/components/UploadCard";
 import InterviewHeader from "@/app/components/InterviewHeader";
 import TimerBadge from "@/app/components/TimerBadge";
@@ -9,35 +10,56 @@ import ReportCard from "@/app/components/ReportCard";
 type Evaluation = {
   question: string;
   answer: string;
-  score: "Strong" | "Medium" | "Weak";
-  reasoning: string;
 };
 
 export default function InterviewPage() {
+  /* ================= BASIC STATE ================= */
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [resumeText, setResumeText] = useState("");
-  const [question, setQuestion] = useState<string | null>(null);
+  const [projects, setProjects] = useState<any[]>([]);
 
-  const [answerText, setAnswerText] = useState("");
+  const [question, setQuestion] = useState("");
+  const [askedQuestions, setAskedQuestions] = useState<string[]>([]);
+
+  /* ================= AUDIO ================= */
   const [isRecording, setIsRecording] = useState(false);
+  const [answerText, setAnswerText] = useState("");
   const recognitionRef = useRef<any>(null);
 
+  /* ================= TIMER (160s) ================= */
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  /* ================= EVALUATION ================= */
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [finalReport, setFinalReport] = useState<any>(null);
 
-  /* ================= PDF EXTRACTION ================= */
-  async function extractPdfText(file: File): Promise<string> {
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  /* ================= DERIVED ================= */
+  const maxQuestions = projects.length <= 1 ? 3 : 5;
+  const interviewCompleted = askedQuestions.length >= maxQuestions;
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  /* ================= PDF + RESUME UPLOAD ================= */
+  async function uploadResume() {
+    if (!file) return;
+
+    setLoading(true);
+    setResumeText("");
+    setProjects([]);
+    setQuestion("");
+    setAskedQuestions([]);
+    setAnswerText("");
+    setEvaluations([]);
+    setFinalReport(null);
+
+    // PDF READ
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = new URL(
       "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
       import.meta.url
     ).toString();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
     const buffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -48,38 +70,48 @@ export default function InterviewPage() {
       const content = await page.getTextContent();
       text += content.items.map((i: any) => i.str).join(" ") + "\n";
     }
-    return text;
+
+    // Upload Resume
+    const res = await fetch("/api/upload-resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, text }),
+    });
+
+    const data = await res.json();
+    setResumeText(data.extractedText || "");
+
+    // Extract Projects
+    const projectRes = await fetch("/api/extract-projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resumeText: data.extractedText }),
+    });
+
+    const projectData = await projectRes.json();
+    setProjects(projectData.projects || []);
+
+    setLoading(false);
   }
 
-  /* ================= UPLOAD + AUTO START ================= */
-  async function uploadResume() {
-    if (!file) return;
+  /* ================= START INTERVIEW ================= */
+  async function startInterview() {
+    if (!resumeText) return;
 
-    setLoading(true);
-    setQuestion(null);
-    setAnswerText("");
-    setEvaluations([]);
-    setFinalReport(null);
-
-    const extractedText = await extractPdfText(file);
-    setResumeText(extractedText);
-
-    // 🔥 AUTO START INTERVIEW HERE
     const res = await fetch("/api/ask-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeText: extractedText }),
+      body: JSON.stringify({
+        resumeText,
+        projects,
+        askedQuestions,
+      }),
     });
 
-    if (!res.ok) {
-      alert("Error starting interview.");
-      setLoading(false);
-      return;
-    }
-
     const data = await res.json();
+
     setQuestion(data.question);
-    setLoading(false);
+    setAskedQuestions((prev) => [...prev, data.question]);
   }
 
   /* ================= TIMER ================= */
@@ -90,78 +122,104 @@ export default function InterviewPage() {
     if (timerRef.current) clearInterval(timerRef.current);
 
     timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
           clearInterval(timerRef.current!);
-          recognitionRef.current?.stop();
-          submitAnswer();
+          timerRef.current = null;
+
+          if (recognitionRef.current) recognitionRef.current.stop();
+
+          if (answerText.trim()) {
+            submitAnswer();
+          }
           return 0;
         }
-        return t - 1;
+        return prev - 1;
       });
     }, 1000);
 
-    return () => timerRef.current && clearInterval(timerRef.current);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [question]);
 
   /* ================= AUDIO ================= */
   function startRecording() {
     if (isRecording) return;
 
-    const SR =
+    const SpeechRecognition =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
 
-    const recognition = new SR();
+    if (!SpeechRecognition) {
+      alert("Speech recognition not supported");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
-    recognition.continuous = true;
     recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
 
     recognition.onstart = () => {
       setIsRecording(true);
       setAnswerText("");
     };
 
-    recognition.onresult = (e: any) => {
-      let t = "";
-      for (let i = 0; i < e.results.length; i++) {
-        t += e.results[i][0].transcript + " ";
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript + " ";
       }
-      setAnswerText(t.trim());
+      setAnswerText(transcript.trim());
     };
 
-    recognition.onend = () => setIsRecording(false);
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
     recognition.start();
   }
 
-  /* ================= SUBMIT ================= */
+  /* ================= SUBMIT ANSWER ================= */
   async function submitAnswer() {
-    recognitionRef.current?.stop();
+    if (recognitionRef.current) recognitionRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const res = await fetch("/api/follow-up-question", {
+    setEvaluations((prev) => [
+      ...prev,
+      { question, answer: answerText },
+    ]);
+
+    setAnswerText("");
+
+    if (askedQuestions.length >= maxQuestions) return;
+
+    const res = await fetch("/api/ask-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeText, question, answer: answerText }),
+      body: JSON.stringify({
+        resumeText,
+        projects,
+        askedQuestions,
+        lastAnswer: answerText,
+      }),
     });
 
     const data = await res.json();
 
-    if (data.nextQuestion) {
-      setQuestion(data.nextQuestion);
-      setAnswerText("");
-    } else {
-      setQuestion(null);
-    }
+    setQuestion(data.question);
+    setAskedQuestions((prev) => [...prev, data.question]);
   }
 
-  /* ================= REPORT ================= */
+  /* ================= FINAL REPORT ================= */
   async function generateFinalReport() {
     const res = await fetch("/api/generate-report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeText, evaluations }),
+      body: JSON.stringify({ evaluations }),
     });
 
     const data = await res.json();
@@ -179,18 +237,30 @@ export default function InterviewPage() {
         />
       )}
 
-      {question && (
+      {resumeText && !question && (
+        <button onClick={startInterview}>Start Interview</button>
+      )}
+
+      {question && !interviewCompleted && (
         <>
-          <InterviewHeader current={evaluations.length + 1} total={5} />
+          <InterviewHeader
+            current={askedQuestions.length}
+            total={maxQuestions}
+          />
+
           <TimerBadge timeLeft={timeLeft} />
+
           <h3 style={{ marginTop: 20 }}>{question}</h3>
 
-          <button onClick={startRecording} disabled={isRecording}>
+          <button
+            onClick={startRecording}
+            disabled={isRecording || timeLeft === 0}
+          >
             {isRecording ? "Recording..." : "Start Answering"}
           </button>
 
           {answerText && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 16 }}>
               <p>{answerText}</p>
               <button onClick={submitAnswer}>Submit Answer</button>
             </div>
@@ -198,8 +268,13 @@ export default function InterviewPage() {
         </>
       )}
 
-      {!question && resumeText && !finalReport && (
-        <button onClick={generateFinalReport}>Generate Final Report</button>
+      {interviewCompleted && !finalReport && (
+        <div style={{ marginTop: 32, textAlign: "center" }}>
+          <h2>Your interview has been completed</h2>
+          <button onClick={generateFinalReport}>
+            Generate Final Report
+          </button>
+        </div>
       )}
 
       {finalReport && <ReportCard report={finalReport} />}
