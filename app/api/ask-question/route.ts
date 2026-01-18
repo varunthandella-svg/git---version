@@ -1,46 +1,27 @@
 import { NextResponse } from "next/server";
-import {
-  initInterviewSession,
-  setInterviewQuestions,
-  getNextInterviewQuestion,
-} from "@/app/lib/interviewSession";
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const projects = body.projects;
+  try {
+    const body = await req.json();
+    const resumeText = body?.resumeText;
 
-  if (!projects || projects.length === 0) {
+    if (!resumeText || typeof resumeText !== "string" || resumeText.length < 50) {
+      return NextResponse.json(
+        { error: "Invalid or empty resumeText" },
+        { status: 400 }
+      );
+    }
+
+    // TEMP SAFE QUESTION (until OpenAI is re-enabled)
+    return NextResponse.json({
+      question:
+        "Explain one project you worked on recently and your exact contribution.",
+    });
+  } catch (err) {
+    console.error("ask-question error:", err);
     return NextResponse.json(
-      { error: "No projects found" },
-      { status: 400 }
+      { error: "Internal server error" },
+      { status: 500 }
     );
   }
-
-  // 1️⃣ Initialize session
-  initInterviewSession(projects);
-
-  // 2️⃣ Create deterministic project-based questions
-  const questions: string[] = [];
-
-  projects.forEach((project: any) => {
-    questions.push(
-      `Explain the project "${project.name}" and your exact contribution.`
-    );
-    questions.push(
-      `What technical challenges did you face in "${project.name}" and how did you solve them?`
-    );
-    questions.push(
-      `If you had to improve "${project.name}" today, what would you change and why?`
-    );
-  });
-
-  // 3️⃣ Store questions
-  setInterviewQuestions(questions);
-
-  // 4️⃣ Ask first question
-  const firstQuestion = getNextInterviewQuestion();
-
-  return NextResponse.json({
-    question: firstQuestion,
-  });
 }
