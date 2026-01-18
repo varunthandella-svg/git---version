@@ -10,6 +10,7 @@ import ReportCard from "@/app/components/ReportCard";
 type Evaluation = {
   question: string;
   answer: string;
+  reasoning: string;
 };
 
 export default function InterviewPage() {
@@ -17,34 +18,34 @@ export default function InterviewPage() {
   const [loading, setLoading] = useState(false);
 
   const [resumeText, setResumeText] = useState("");
-  const [question, setQuestion] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
 
   // 🎤 AUDIO
   const [isRecording, setIsRecording] = useState(false);
   const [answerText, setAnswerText] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // ⏱ TIMER (160 sec)
+  // ⏱ TIMER (160 seconds)
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 📊 ANSWERS (NO SCORING)
+  // 📊 ANSWER EVALUATIONS
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
 
-  // 🧾 REPORT
+  // 🧾 FINAL REPORT
   const [finalReport, setFinalReport] = useState<any>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
   const MAX_QUESTIONS = 3;
   const interviewCompleted = evaluations.length === MAX_QUESTIONS;
 
-  /* ================= UPLOAD RESUME ================= */
+  /* ================= PDF UPLOAD ================= */
   async function uploadResume() {
     if (!file) return;
 
     setLoading(true);
     setResumeText("");
-    setQuestion(null);
+    setQuestion("");
     setAnswerText("");
     setEvaluations([]);
     setFinalReport(null);
@@ -74,27 +75,38 @@ export default function InterviewPage() {
 
     const data = await res.json();
     setResumeText(data.extractedText || "");
+
     setLoading(false);
   }
 
   /* ================= START INTERVIEW (FIXED) ================= */
   async function startInterview() {
     try {
+      if (!resumeText) {
+        alert("Resume not loaded. Please upload again.");
+        return;
+      }
+
       const res = await fetch("/api/ask-question", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resumeText }),
+        body: JSON.stringify({
+          resumeText,
+          project: "Primary Project", // ✅ REQUIRED
+        }),
       });
 
       const data = await res.json();
 
       if (!data?.question) {
-        alert("Unable to start interview. Please try again.");
+        console.error("ask-question API response:", data);
+        alert("Error starting interview.");
         return;
       }
 
       setQuestion(data.question);
-    } catch {
+    } catch (err) {
+      console.error(err);
       alert("Error starting interview.");
     }
   }
@@ -114,10 +126,7 @@ export default function InterviewPage() {
 
           if (recognitionRef.current) recognitionRef.current.stop();
 
-          if (answerText.trim()) {
-            submitAnswer();
-          }
-
+          if (answerText.trim()) submitAnswer();
           return 0;
         }
         return prev - 1;
@@ -174,25 +183,31 @@ export default function InterviewPage() {
     if (recognitionRef.current) recognitionRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
 
-    setEvaluations((prev) => [
-      ...prev,
-      { question: question!, answer: answerText },
-    ]);
+    const res = await fetch("/api/follow-up-question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        resumeText,
+        question,
+        answer: answerText,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (data?.evaluation) {
+      setEvaluations((prev) => [
+        ...prev,
+        {
+          question,
+          answer: answerText,
+          reasoning: data.evaluation.reasoning,
+        },
+      ]);
+    }
 
     setAnswerText("");
-
-    if (evaluations.length + 1 < MAX_QUESTIONS) {
-      const res = await fetch("/api/ask-question", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resumeText }),
-      });
-
-      const data = await res.json();
-      setQuestion(data.question);
-    } else {
-      setQuestion(null);
-    }
+    setQuestion(data.nextQuestion || "");
   }
 
   /* ================= GENERATE REPORT ================= */
@@ -202,7 +217,10 @@ export default function InterviewPage() {
     const res = await fetch("/api/generate-report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeText, evaluations }),
+      body: JSON.stringify({
+        resumeText,
+        evaluations,
+      }),
     });
 
     const data = await res.json();
@@ -225,7 +243,7 @@ export default function InterviewPage() {
         <button onClick={startInterview}>Start Interview</button>
       )}
 
-      {question && (
+      {question && !interviewCompleted && (
         <>
           <InterviewHeader
             current={evaluations.length + 1}
@@ -255,6 +273,7 @@ export default function InterviewPage() {
       {interviewCompleted && !finalReport && (
         <div style={{ marginTop: 32, textAlign: "center" }}>
           <h2>Your interview has been completed</h2>
+          <p>Click below to generate your interview feedback.</p>
 
           <button onClick={generateFinalReport} disabled={reportLoading}>
             {reportLoading ? "Generating Report..." : "Generate Final Report"}
