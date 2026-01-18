@@ -4,57 +4,70 @@ import { client } from "@/app/lib/openaiClient";
 
 export async function POST(req: Request) {
   try {
-    const { resumeText } = await req.json();
+    const body = await req.json();
+    const resumeText = body?.resumeText;
 
-    if (!resumeText) {
+    if (!resumeText || resumeText.trim().length < 20) {
       return NextResponse.json(
-        { error: "Resume text missing" },
+        { error: "Resume text missing or too short" },
         { status: 400 }
       );
     }
 
+    // 🔒 SAFETY: Generate questions ONLY ONCE
     const prompt = `
-You are a technical interviewer.
+You are a senior technical interviewer.
 
 TASK:
-1. Read the resume
-2. Identify ALL projects
-3. If only 1 project → create exactly 3 questions
-4. If more than 1 project → create exactly 5 questions total
-5. Questions must be:
-   - Project specific
-   - Implementation focused
-   - Skill based
-6. Do NOT include generic questions
-7. Return ONLY a JSON array of strings
+- Read the resume
+- Identify ALL projects
+- If only 1 project → create EXACTLY 3 questions
+- If more than 1 project → create EXACTLY 5 questions total
+- Questions MUST be:
+  • Project-specific
+  • Implementation-focused
+  • Skill-based
+- DO NOT ask generic questions
+- Return ONLY a JSON array of strings
 
-Resume:
+RESUME:
 ${resumeText}
 `;
 
-    const response = await client.chat.completions.create({
+    const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.3,
     });
 
-    const raw = response.choices[0].message.content || "[]";
-    const questions = JSON.parse(raw);
+    const raw = completion.choices[0]?.message?.content;
 
-    if (!Array.isArray(questions) || questions.length === 0) {
-      return NextResponse.json(
-        { error: "Invalid questions generated" },
-        { status: 500 }
-      );
+    if (!raw) {
+      throw new Error("Empty OpenAI response");
     }
 
+    let questions: string[];
+
+    try {
+      questions = JSON.parse(raw);
+    } catch {
+      throw new Error("OpenAI did not return valid JSON array");
+    }
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      throw new Error("Questions array invalid");
+    }
+
+    // ✅ Store questions in memory
     setQuestions(questions);
 
+    // ✅ Return first question
     return NextResponse.json({
       question: getNextQuestion(),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("ASK QUESTION ERROR:", error);
+
     return NextResponse.json(
       { error: "Error starting interview" },
       { status: 500 }
