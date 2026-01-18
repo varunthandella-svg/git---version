@@ -25,7 +25,7 @@ export default function InterviewPage() {
   const [answerText, setAnswerText] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // ⏱ TIMER (160 seconds)
+  // ⏱ TIMER (160 sec)
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -34,10 +34,11 @@ export default function InterviewPage() {
 
   // 🧾 FINAL REPORT
   const [finalReport, setFinalReport] = useState<any>(null);
-  const [reportLoading, setReportLoading] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   const MAX_QUESTIONS = 3;
-  const interviewCompleted = evaluations.length === MAX_QUESTIONS;
+
+  const interviewCompleted = evaluations.length >= MAX_QUESTIONS;
 
   /* ================= PDF UPLOAD ================= */
   async function uploadResume() {
@@ -75,32 +76,25 @@ export default function InterviewPage() {
 
     const data = await res.json();
     setResumeText(data.extractedText || "");
-
     setLoading(false);
   }
 
   /* ================= START INTERVIEW (FIXED) ================= */
   async function startInterview() {
     try {
-      if (!resumeText) {
-        alert("Resume not loaded. Please upload again.");
-        return;
-      }
-
       const res = await fetch("/api/ask-question", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           resumeText,
-          project: "Primary Project", // ✅ REQUIRED
+          project: { name: "Primary Project" }, // ✅ REQUIRED SHAPE
         }),
       });
 
       const data = await res.json();
 
       if (!data?.question) {
-        console.error("ask-question API response:", data);
-        alert("Error starting interview.");
+        alert("Failed to start interview.");
         return;
       }
 
@@ -127,6 +121,7 @@ export default function InterviewPage() {
           if (recognitionRef.current) recognitionRef.current.stop();
 
           if (answerText.trim()) submitAnswer();
+
           return 0;
         }
         return prev - 1;
@@ -195,7 +190,7 @@ export default function InterviewPage() {
 
     const data = await res.json();
 
-    if (data?.evaluation) {
+    if (data.evaluation) {
       setEvaluations((prev) => [
         ...prev,
         {
@@ -210,22 +205,19 @@ export default function InterviewPage() {
     setQuestion(data.nextQuestion || "");
   }
 
-  /* ================= GENERATE REPORT ================= */
+  /* ================= FINAL REPORT ================= */
   async function generateFinalReport() {
-    setReportLoading(true);
+    setGeneratingReport(true);
 
     const res = await fetch("/api/generate-report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        resumeText,
-        evaluations,
-      }),
+      body: JSON.stringify({ evaluations }),
     });
 
     const data = await res.json();
     setFinalReport(data);
-    setReportLoading(false);
+    setGeneratingReport(false);
   }
 
   /* ================= UI ================= */
@@ -254,10 +246,7 @@ export default function InterviewPage() {
 
           <h3 style={{ marginTop: 20 }}>{question}</h3>
 
-          <button
-            onClick={startRecording}
-            disabled={isRecording || timeLeft === 0}
-          >
+          <button onClick={startRecording} disabled={isRecording}>
             {isRecording ? "Recording..." : "Start Answering"}
           </button>
 
@@ -275,8 +264,8 @@ export default function InterviewPage() {
           <h2>Your interview has been completed</h2>
           <p>Click below to generate your interview feedback.</p>
 
-          <button onClick={generateFinalReport} disabled={reportLoading}>
-            {reportLoading ? "Generating Report..." : "Generate Final Report"}
+          <button onClick={generateFinalReport} disabled={generatingReport}>
+            {generatingReport ? "Generating report..." : "Generate Report"}
           </button>
         </div>
       )}
