@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-
 import UploadCard from "@/app/components/UploadCard";
 import InterviewHeader from "@/app/components/InterviewHeader";
 import TimerBadge from "@/app/components/TimerBadge";
@@ -10,6 +9,8 @@ import ReportCard from "@/app/components/ReportCard";
 type Evaluation = {
   question: string;
   answer: string;
+  score: "Strong" | "Medium" | "Weak";
+  reasoning: string;
 };
 
 export default function InterviewPage() {
@@ -19,35 +20,20 @@ export default function InterviewPage() {
   const [resumeText, setResumeText] = useState("");
   const [question, setQuestion] = useState<string | null>(null);
 
-  // 🎤 AUDIO
-  const [isRecording, setIsRecording] = useState(false);
   const [answerText, setAnswerText] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  // ⏱ TIMER (160 sec)
   const [timeLeft, setTimeLeft] = useState(160);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 📊 EVALUATIONS
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-
-  // 🧾 FINAL REPORT
   const [finalReport, setFinalReport] = useState<any>(null);
 
-  const interviewCompleted = question === null && evaluations.length > 0;
-
-  /* ================= PDF + UPLOAD ================= */
-  async function uploadResume() {
-    if (!file) return;
-
-    setLoading(true);
-    setResumeText("");
-    setQuestion(null);
-    setAnswerText("");
-    setEvaluations([]);
-    setFinalReport(null);
-
+  /* ================= PDF EXTRACTION ================= */
+  async function extractPdfText(file: File): Promise<string> {
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
       "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
       import.meta.url
@@ -62,29 +48,38 @@ export default function InterviewPage() {
       const content = await page.getTextContent();
       text += content.items.map((i: any) => i.str).join(" ") + "\n";
     }
-
-    const res = await fetch("/api/upload-resume", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: file.name, text }),
-    });
-
-    const data = await res.json();
-    setResumeText(data.extractedText || "");
-
-    setLoading(false);
+    return text;
   }
 
-  /* ================= START INTERVIEW ================= */
-  async function startInterview() {
+  /* ================= UPLOAD + AUTO START ================= */
+  async function uploadResume() {
+    if (!file) return;
+
+    setLoading(true);
+    setQuestion(null);
+    setAnswerText("");
+    setEvaluations([]);
+    setFinalReport(null);
+
+    const extractedText = await extractPdfText(file);
+    setResumeText(extractedText);
+
+    // 🔥 AUTO START INTERVIEW HERE
     const res = await fetch("/api/ask-question", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeText }),
+      body: JSON.stringify({ resumeText: extractedText }),
     });
+
+    if (!res.ok) {
+      alert("Error starting interview.");
+      setLoading(false);
+      return;
+    }
 
     const data = await res.json();
     setQuestion(data.question);
+    setLoading(false);
   }
 
   /* ================= TIMER ================= */
@@ -95,96 +90,73 @@ export default function InterviewPage() {
     if (timerRef.current) clearInterval(timerRef.current);
 
     timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
+      setTimeLeft((t) => {
+        if (t <= 1) {
           clearInterval(timerRef.current!);
-          timerRef.current = null;
-
-          if (recognitionRef.current) {
-            recognitionRef.current.stop();
-          }
-
-          if (answerText.trim()) {
-            submitAnswer();
-          }
-
+          recognitionRef.current?.stop();
+          submitAnswer();
           return 0;
         }
-        return prev - 1;
+        return t - 1;
       });
     }, 1000);
 
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => timerRef.current && clearInterval(timerRef.current);
   }, [question]);
 
   /* ================= AUDIO ================= */
   function startRecording() {
     if (isRecording) return;
 
-    const SpeechRecognition =
+    const SR =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
-      alert("Speech recognition not supported");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
+    const recognition = new SR();
     recognitionRef.current = recognition;
 
-    recognition.lang = "en-US";
     recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.lang = "en-US";
 
     recognition.onstart = () => {
       setIsRecording(true);
       setAnswerText("");
     };
 
-    recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript + " ";
+    recognition.onresult = (e: any) => {
+      let t = "";
+      for (let i = 0; i < e.results.length; i++) {
+        t += e.results[i][0].transcript + " ";
       }
-      setAnswerText(transcript.trim());
+      setAnswerText(t.trim());
     };
 
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
-
+    recognition.onend = () => setIsRecording(false);
     recognition.start();
   }
 
-  /* ================= SUBMIT ANSWER ================= */
+  /* ================= SUBMIT ================= */
   async function submitAnswer() {
-    if (recognitionRef.current) recognitionRef.current.stop();
+    recognitionRef.current?.stop();
     if (timerRef.current) clearInterval(timerRef.current);
-
-    setEvaluations((prev) => [
-      ...prev,
-      { question: question!, answer: answerText },
-    ]);
-
-    setAnswerText("");
 
     const res = await fetch("/api/follow-up-question", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resumeText, question, answer: answerText }),
     });
 
     const data = await res.json();
 
-    if (!data.nextQuestion) {
-      setQuestion(null);
-    } else {
+    if (data.nextQuestion) {
       setQuestion(data.nextQuestion);
+      setAnswerText("");
+    } else {
+      setQuestion(null);
     }
   }
 
-  /* ================= FINAL REPORT ================= */
+  /* ================= REPORT ================= */
   async function generateFinalReport() {
     const res = await fetch("/api/generate-report", {
       method: "POST",
@@ -207,30 +179,18 @@ export default function InterviewPage() {
         />
       )}
 
-      {resumeText && !question && !interviewCompleted && (
-        <button onClick={startInterview}>Start Interview</button>
-      )}
-
       {question && (
         <>
-          <InterviewHeader
-            current={evaluations.length + 1}
-            total={5}
-          />
-
+          <InterviewHeader current={evaluations.length + 1} total={5} />
           <TimerBadge timeLeft={timeLeft} />
-
           <h3 style={{ marginTop: 20 }}>{question}</h3>
 
-          <button
-            onClick={startRecording}
-            disabled={isRecording || timeLeft === 0}
-          >
+          <button onClick={startRecording} disabled={isRecording}>
             {isRecording ? "Recording..." : "Start Answering"}
           </button>
 
           {answerText && (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 12 }}>
               <p>{answerText}</p>
               <button onClick={submitAnswer}>Submit Answer</button>
             </div>
@@ -238,13 +198,8 @@ export default function InterviewPage() {
         </>
       )}
 
-      {interviewCompleted && !finalReport && (
-        <div style={{ marginTop: 32, textAlign: "center" }}>
-          <h2>Your interview has been completed</h2>
-          <button onClick={generateFinalReport}>
-            Generate Final Report
-          </button>
-        </div>
+      {!question && resumeText && !finalReport && (
+        <button onClick={generateFinalReport}>Generate Final Report</button>
       )}
 
       {finalReport && <ReportCard report={finalReport} />}
