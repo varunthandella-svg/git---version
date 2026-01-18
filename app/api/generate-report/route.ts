@@ -1,48 +1,76 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
+type Evaluation = {
+  question: string;
+  answer: string;
+  score: "Strong" | "Medium" | "Weak";
+  reasoning: string;
+};
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const evaluations = Array.isArray(body.evaluations) ? body.evaluations : [];
 
-    const strong = evaluations.filter((e) => e.score === "Strong").length;
-    const medium = evaluations.filter((e) => e.score === "Medium").length;
-    const weak = evaluations.filter((e) => e.score === "Weak").length;
+    const evaluations: Evaluation[] = Array.isArray(body.evaluations)
+      ? body.evaluations
+      : [];
 
-    let verdict: "Strong" | "Medium" | "Weak" = "Medium";
-    if (weak >= 2) verdict = "Weak";
-    else if (strong >= 2 && weak === 0) verdict = "Strong";
+    // Defensive fallback
+    if (evaluations.length === 0) {
+      return NextResponse.json({
+        verdict: "Weak",
+        summary: "No valid responses were recorded during the interview.",
+        projectBreakdown: {
+          strengths: [],
+          gaps: ["No evaluable answers submitted"],
+        },
+      });
+    }
 
-    // Strengths / gaps based on observed evaluations
-    const strengths: string[] = [];
-    const gaps: string[] = [];
+    const strong = evaluations.filter(
+      (e: Evaluation) => e.score === "Strong"
+    ).length;
 
-    if (strong > 0) strengths.push("Good clarity and ownership in explaining work and contribution.");
-    if (medium > 0) strengths.push("Some structure present; communicates reasonably under time.");
-    if (weak === 0) strengths.push("No major breakdowns; maintained continuity across questions.");
+    const medium = evaluations.filter(
+      (e: Evaluation) => e.score === "Medium"
+    ).length;
 
-    if (weak > 0) gaps.push("Needs more depth: technical specifics, examples, and step-by-step explanation.");
-    if (medium + weak > strong) gaps.push("Improve structured storytelling: problem → approach → output → impact.");
-    if (weak >= 2) gaps.push("Answer completeness and confidence under time needs improvement.");
+    const weak = evaluations.filter(
+      (e: Evaluation) => e.score === "Weak"
+    ).length;
 
-    const summary =
-      verdict === "Strong"
-        ? "Candidate demonstrated strong project ownership and clear, detailed explanations across most questions."
-        : verdict === "Weak"
-        ? "Candidate struggled to give complete, structured, and detailed answers under timed conditions."
-        : "Candidate showed moderate clarity but needs stronger depth and structured explanation in answers.";
+    // Verdict logic (simple & reliable)
+    let verdict: "Strong" | "Medium" | "Weak" = "Weak";
+
+    if (strong >= medium && strong >= weak) verdict = "Strong";
+    else if (medium >= strong && medium >= weak) verdict = "Medium";
+
+    // IMPORTANT: strengths & gaps MUST come from interview answers,
+    // NOT resume (as per your requirement)
+    const strengths = evaluations
+      .filter((e) => e.score === "Strong")
+      .map((e) => e.reasoning);
+
+    const gaps = evaluations
+      .filter((e) => e.score === "Weak")
+      .map((e) => e.reasoning);
 
     return NextResponse.json({
       verdict,
-      summary,
+      summary:
+        "The evaluation is based entirely on the candidate’s spoken responses and interaction quality during the interview.",
       projectBreakdown: {
         strengths,
         gaps,
       },
     });
-  } catch (e: any) {
+  } catch (error) {
+    console.error("Generate report error:", error);
+
     return NextResponse.json(
-      { error: "generate-report failed", details: String(e?.message || e) },
+      { error: "Failed to generate report" },
       { status: 500 }
     );
   }
