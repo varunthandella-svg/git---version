@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { NextResponse } from "next/server";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -7,42 +7,69 @@ const client = new OpenAI({
 
 export async function POST(req: Request) {
   try {
-    const { resumeText, evaluations } = await req.json();
+    const { evaluations } = await req.json();
 
     if (!evaluations || evaluations.length === 0) {
-      return NextResponse.json(
-        { error: "No evaluations found" },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        verdict: "Weak",
+        summary: "Insufficient interview data to evaluate performance.",
+        projectBreakdown: {
+          strengths: [],
+          gaps: [],
+        },
+      });
     }
 
-    const evaluationText = evaluations
-      .map(
-        (e: any, i: number) =>
-          `Q${i + 1}: ${e.question}\nAnswer: ${e.answer}\nScore: ${e.score}\nReason: ${e.reasoning}`
-      )
-      .join("\n\n");
-
     const prompt = `
-You are an interview evaluator.
+You are an interviewer evaluating a PROJECT VIVA strictly based on spoken answers.
 
-Based on the candidate resume and interview evaluations, generate a final report.
+CRITICAL RULES (DO NOT BREAK):
+- Do NOT use resume information.
+- Do NOT use numeric scoring.
+- Do NOT calculate averages, percentages, or totals.
+- Do NOT mention marks or scores.
+- Base everything ONLY on what the candidate actually spoke.
 
-Resume:
-${resumeText}
+Evaluate the candidate on:
+- Concept clarity
+- Depth of explanation
+- Technical correctness
+- Confidence and articulation
+- Ability to justify decisions
 
-Interview Evaluations:
-${evaluationText}
+Below are the interview interactions:
 
-Return JSON only with this structure:
+${evaluations
+  .map(
+    (e: any, i: number) => `
+Question ${i + 1}: ${e.question}
+Candidate Answer: ${e.answer}
+Evaluator Notes: ${e.reasoning}
+`
+  )
+  .join("\n")}
+
+Now generate a FINAL INTERVIEW REPORT in JSON ONLY with this exact structure:
+
 {
   "verdict": "Strong | Medium | Weak",
-  "summary": "2-3 line overall feedback",
+  "summary": "2–3 lines summarizing overall interview performance based ONLY on answers",
   "projectBreakdown": {
-    "strengths": ["..."],
-    "gaps": ["..."]
+    "strengths": [
+      "Strengths clearly demonstrated in spoken answers"
+    ],
+    "gaps": [
+      "Weaknesses or missing understanding observed in answers"
+    ]
   }
 }
+
+Verdict guidelines:
+- Strong → Clear, confident, technically sound answers with depth
+- Medium → Partial understanding, correct basics, limited depth
+- Weak → Confusion, shallow explanations, or incorrect reasoning
+
+Be honest, specific, and answer-driven.
 `;
 
     const completion = await client.chat.completions.create({
@@ -52,13 +79,24 @@ Return JSON only with this structure:
     });
 
     const text = completion.choices[0].message.content || "{}";
-    const json = JSON.parse(text);
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
 
-    return NextResponse.json(json);
-  } catch (err: any) {
-    console.error("REPORT ERROR:", err);
+    const report = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+
+    return NextResponse.json(report);
+  } catch (error) {
+    console.error("Generate report error:", error);
+
     return NextResponse.json(
-      { error: "Failed to generate report" },
+      {
+        verdict: "Weak",
+        summary: "An error occurred while generating the report.",
+        projectBreakdown: {
+          strengths: [],
+          gaps: [],
+        },
+      },
       { status: 500 }
     );
   }
