@@ -13,6 +13,40 @@ type Evaluation = {
   reasoning: string;
 };
 
+async function postWithFallback(urls: string[], body: any) {
+  let lastErr: any = null;
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      // If route not found, try next
+      if (res.status === 404) continue;
+
+      // If server error, still read text for debugging
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} on ${url}. Body: ${txt}`);
+      }
+
+      const data = await res.json().catch(async () => {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Invalid JSON from ${url}. Body: ${txt}`);
+      });
+
+      return { urlUsed: url, data };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  throw lastErr || new Error("All fallback URLs failed.");
+}
+
 export default function InterviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,7 +71,6 @@ export default function InterviewPage() {
   const [generatingReport, setGeneratingReport] = useState(false);
 
   const MAX_QUESTIONS = 3;
-
   const interviewCompleted = evaluations.length >= MAX_QUESTIONS;
 
   /* ================= PDF UPLOAD ================= */
@@ -79,28 +112,27 @@ export default function InterviewPage() {
     setLoading(false);
   }
 
-  /* ================= START INTERVIEW (FIXED) ================= */
+  /* ================= START INTERVIEW (FIXED + FALLBACK) ================= */
   async function startInterview() {
     try {
-      const res = await fetch("/api/ask-question", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const { urlUsed, data } = await postWithFallback(
+        ["/api/ask-question", "/api/askquestion"],
+        {
           resumeText,
-          project: { name: "Primary Project" }, // ✅ REQUIRED SHAPE
-        }),
-      });
+          project: { name: "Primary Project" },
+        }
+      );
 
-      const data = await res.json();
+      console.log("ask-question url used:", urlUsed, data);
 
       if (!data?.question) {
-        alert("Failed to start interview.");
+        alert("Failed to start interview (no question returned).");
         return;
       }
 
       setQuestion(data.question);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("startInterview failed:", err);
       alert("Error starting interview.");
     }
   }
@@ -173,51 +205,53 @@ export default function InterviewPage() {
     recognition.start();
   }
 
-  /* ================= SUBMIT ANSWER ================= */
+  /* ================= SUBMIT ANSWER (FIXED + FALLBACK) ================= */
   async function submitAnswer() {
     if (recognitionRef.current) recognitionRef.current.stop();
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const res = await fetch("/api/follow-up-question", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        resumeText,
-        question,
-        answer: answerText,
-      }),
-    });
+    try {
+      const { urlUsed, data } = await postWithFallback(
+        ["/api/follow-up-question", "/api/followup-question", "/api/followupquestion"],
+        { resumeText, question, answer: answerText }
+      );
 
-    const data = await res.json();
+      console.log("follow-up url used:", urlUsed, data);
 
-    if (data.evaluation) {
-      setEvaluations((prev) => [
-        ...prev,
-        {
-          question,
-          answer: answerText,
-          reasoning: data.evaluation.reasoning,
-        },
-      ]);
+      if (data?.evaluation?.reasoning) {
+        setEvaluations((prev) => [
+          ...prev,
+          {
+            question,
+            answer: answerText,
+            reasoning: data.evaluation.reasoning,
+          },
+        ]);
+      }
+
+      setAnswerText("");
+      setQuestion(data.nextQuestion || "");
+    } catch (err: any) {
+      console.error("submitAnswer failed:", err);
+      alert("Error submitting answer.");
     }
-
-    setAnswerText("");
-    setQuestion(data.nextQuestion || "");
   }
 
   /* ================= FINAL REPORT ================= */
   async function generateFinalReport() {
     setGeneratingReport(true);
-
-    const res = await fetch("/api/generate-report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evaluations }),
-    });
-
-    const data = await res.json();
-    setFinalReport(data);
-    setGeneratingReport(false);
+    try {
+      const { data } = await postWithFallback(
+        ["/api/generate-report", "/api/generatereport"],
+        { evaluations } // ✅ report should be based on answers only
+      );
+      setFinalReport(data);
+    } catch (err: any) {
+      console.error("generateFinalReport failed:", err);
+      alert("Error generating report.");
+    } finally {
+      setGeneratingReport(false);
+    }
   }
 
   /* ================= UI ================= */
@@ -237,11 +271,7 @@ export default function InterviewPage() {
 
       {question && !interviewCompleted && (
         <>
-          <InterviewHeader
-            current={evaluations.length + 1}
-            total={MAX_QUESTIONS}
-          />
-
+          <InterviewHeader current={evaluations.length + 1} total={MAX_QUESTIONS} />
           <TimerBadge timeLeft={timeLeft} />
 
           <h3 style={{ marginTop: 20 }}>{question}</h3>
