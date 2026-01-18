@@ -1,43 +1,26 @@
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function POST(req: Request) {
-  const { resumeText } = await req.json();
+  try {
+    const body = await req.json();
+    const { resumeText } = body;
 
-  if (!resumeText) {
+    if (!resumeText) {
+      return NextResponse.json(
+        { error: "Resume text missing" },
+        { status: 400 }
+      );
+    }
+
+    // TEMP STATIC QUESTION (to confirm flow works)
+    return NextResponse.json({
+      question: "Explain one project you worked on and your role in it.",
+    });
+  } catch (err) {
+    console.error("ask-question error:", err);
     return NextResponse.json(
-      { error: "resumeText missing" },
-      { status: 400 }
+      { error: "Internal server error" },
+      { status: 500 }
     );
   }
-
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "user",
-        content: `
-You are a technical interviewer.
-
-From the resume below:
-Ask ONE deep project-based interview question.
-Return ONLY the question.
-
-Resume:
-${resumeText}
-`,
-      },
-    ],
-    temperature: 0.4,
-  });
-
-  return NextResponse.json({
-    question: response.choices[0].message.content,
-  });
 }
