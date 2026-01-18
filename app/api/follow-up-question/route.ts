@@ -1,28 +1,50 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+import { getNextQuestion } from "@/app/lib/interviewSession";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { question, answer } = body;
+    const { question, answer } = await req.json();
 
-    if (!answer) {
-      return NextResponse.json(
-        { error: "Answer missing" },
-        { status: 400 }
-      );
-    }
+    const evalPrompt = `
+Evaluate the candidate answer.
+
+Question:
+${question}
+
+Answer:
+${answer}
+
+Return JSON:
+{
+  "score": "Strong | Medium | Weak",
+  "reasoning": "short explanation"
+}
+`;
+
+    const evalRes = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: evalPrompt }],
+    });
+
+    const evaluation = JSON.parse(
+      evalRes.choices[0].message.content || "{}"
+    );
+
+    const nextQuestion = getNextQuestion();
 
     return NextResponse.json({
-      evaluation: {
-        reasoning:
-          "Your answer was clear and relevant, but could include more technical depth.",
-      },
-      nextQuestion: "What challenges did you face in this project?",
+      evaluation,
+      nextQuestion,
     });
   } catch (err) {
     console.error("follow-up error:", err);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Failed follow-up" },
       { status: 500 }
     );
   }
