@@ -1,27 +1,44 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const resumeText = body.resumeText || "";
+  try {
+    const { resumeText } = await req.json();
 
-  // SIMPLE & STABLE heuristic (no AI yet)
-  const projects = [];
+    const prompt = `
+You are an expert technical interviewer.
 
-  const lines = resumeText.split("\n");
-  for (const line of lines) {
-    if (
-      line.toLowerCase().includes("project") ||
-      line.toLowerCase().includes("dashboard") ||
-      line.toLowerCase().includes("analysis")
-    ) {
-      projects.push({ name: line.trim() });
-    }
+From the resume text below, extract ONLY the candidate's PROJECTS.
+
+Rules:
+- Ignore education, skills, summary
+- Each project must include:
+  - name
+  - description
+  - technologies (array)
+- If no projects exist, return empty array
+- Output STRICT JSON ONLY (no markdown, no explanation)
+
+Resume:
+${resumeText}
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+    });
+
+    const raw = completion.choices[0].message.content || "[]";
+    const projects = JSON.parse(raw);
+
+    return NextResponse.json({ projects });
+  } catch (err) {
+    console.error("EXTRACT PROJECTS ERROR:", err);
+    return NextResponse.json({ projects: [] });
   }
-
-  // Fallback
-  if (projects.length === 0) {
-    projects.push({ name: "Primary Resume Project" });
-  }
-
-  return NextResponse.json({ projects });
 }

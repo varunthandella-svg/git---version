@@ -1,50 +1,53 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { question, answer } = body;
 
-    if (!question || !answer) {
-      return NextResponse.json(
-        { error: "Question or answer missing" },
-        { status: 400 }
-      );
-    }
+    const {
+      question,
+      answer,
+      evaluations = [],
+      questionIndex = 0,
+      maxQuestions = 3,
+    } = body;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an interview evaluator. Evaluate the candidate's answer strictly based on clarity, correctness, and depth. Do NOT generate a new question.",
-        },
-        {
-          role: "user",
-          content: `Question: ${question}\nAnswer: ${answer}`,
-        },
-      ],
-      temperature: 0.2,
-    });
+    // Simple evaluation logic (NO OpenAI)
+    let score: "Strong" | "Medium" | "Weak" = "Medium";
 
-    const feedback = completion.choices[0].message.content || "";
+    if (answer.length > 120) score = "Strong";
+    else if (answer.length < 40) score = "Weak";
+
+    const evaluation = {
+      question,
+      answer,
+      score,
+      reasoning:
+        score === "Strong"
+          ? "Clear explanation with sufficient technical depth."
+          : score === "Weak"
+          ? "Answer lacked clarity or technical detail."
+          : "Answer was partially correct but could be more detailed.",
+    };
+
+    const updatedEvaluations = [...evaluations, evaluation];
+    const nextIndex = questionIndex + 1;
 
     return NextResponse.json({
-      evaluation: {
-        feedback,
-      },
+      evaluation,
+      evaluations: updatedEvaluations,
+      interviewCompleted: nextIndex >= maxQuestions,
+      nextQuestionIndex: nextIndex,
     });
-  } catch (error) {
-    console.error("FOLLOW-UP QUESTION ERROR:", error);
+  } catch (error: any) {
+    console.error("FOLLOW-UP ERROR:", error.message);
+
     return NextResponse.json(
-      { error: "Failed to evaluate answer" },
-      { status: 500 }
+      {
+        evaluation: null,
+        interviewCompleted: true,
+      },
+      { status: 200 }
     );
   }
 }
